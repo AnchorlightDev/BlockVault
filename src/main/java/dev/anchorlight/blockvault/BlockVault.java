@@ -75,6 +75,20 @@ public final class BlockVault extends JavaPlugin {
         register("bvleaderboard", new LeaderboardCommand(this));
         register("bvupdatestate", new UpdateStateCommand(this));
 
+        QueryCommand query = new QueryCommand(this);
+        for (String c : new String[]{"bvfind", "bvinfo", "bvmissing", "bvcheck",
+                "bvme", "bvhistory", "bvedition", "bvreload"}) {
+            register(c, query);
+            PluginCommand pc = getCommand(c);
+            if (pc != null) pc.setTabCompleter(query);
+        }
+        AdminCommand admin = new AdminCommand(this);
+        for (String c : new String[]{"bvrevoke", "bvrepair", "bvbackup"}) {
+            register(c, admin);
+            PluginCommand pc = getCommand(c);
+            if (pc != null) pc.setTabCompleter(admin);
+        }
+
         getServer().getPluginManager().registerEvents(new RegionProtectionListener(this), this);
         PlayerGuidanceListener guidance = new PlayerGuidanceListener(this);
         getServer().getPluginManager().registerEvents(guidance, this);

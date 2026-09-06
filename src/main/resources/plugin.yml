@@ -16,13 +16,50 @@ commands:
     description: Show current chapter and overall progress.
     usage: /bvprogress
   bvstart:
-    description: Open the collection event.
-    usage: /bvstart
+    description: Open (or, with 'stop', close) the collection event.
+    usage: /bvstart [stop]
     permission: blockvault.start
   bvupdatestate:
     description: Reconcile the world display against the database.
     usage: /bvupdatestate
     permission: blockvault.updatestate
+  bvfind:
+    description: Where a block lives in the museum.
+    usage: /bvfind <block>
+  bvinfo:
+    description: Rarity, points, chapter and status of a block.
+    usage: /bvinfo <block>
+  bvmissing:
+    description: Outstanding blocks for a chapter.
+    usage: /bvmissing [chapter] [page]
+  bvcheck:
+    description: Scan your inventory for blocks the vault needs.
+    usage: /bvcheck
+  bvme:
+    description: Your donations, points and rank.
+    usage: /bvme
+  bvhistory:
+    description: Who donated a block and when.
+    usage: /bvhistory <block>
+  bvedition:
+    description: Show the frozen target-list version.
+    usage: /bvedition
+  bvreload:
+    description: Reload config without a restart.
+    usage: /bvreload
+    permission: blockvault.reload
+  bvrevoke:
+    description: Reverse a submission and refund its points.
+    usage: /bvrevoke <block>
+    permission: blockvault.revoke
+  bvrepair:
+    description: Rebuild missing frames and heads from the manifest.
+    usage: /bvrepair
+    permission: blockvault.repair
+  bvbackup:
+    description: Write a timestamped database dump.
+    usage: /bvbackup
+    permission: blockvault.backup
 permissions:
   blockvault.submit:
     description: Allows submitting blocks to the vault.
@@ -33,11 +70,44 @@ permissions:
   blockvault.leaderboard:
     description: Allows viewing the leaderboard.
     default: true
+  blockvault.find:
+    description: Allows looking up block locations.
+    default: true
+  blockvault.info:
+    description: Allows looking up block details.
+    default: true
+  blockvault.missing:
+    description: Allows listing outstanding blocks.
+    default: true
+  blockvault.check:
+    description: Allows scanning your inventory against the target list.
+    default: true
+  blockvault.me:
+    description: Allows viewing your own vault record.
+    default: true
+  blockvault.history:
+    description: Allows viewing who donated a block.
+    default: true
+  blockvault.edition:
+    description: Allows viewing the edition version.
+    default: true
   blockvault.start:
     description: Allows opening and closing the event.
     default: op
   blockvault.updatestate:
     description: Allows reconciling the world display against the database.
+    default: op
+  blockvault.reload:
+    description: Allows reloading the configuration.
+    default: op
+  blockvault.revoke:
+    description: Allows reversing a submission.
+    default: op
+  blockvault.repair:
+    description: Allows rebuilding frames and heads.
+    default: op
+  blockvault.backup:
+    description: Allows writing database dumps.
     default: op
   blockvault.build:
     description: Bypass vault build/interaction protection.

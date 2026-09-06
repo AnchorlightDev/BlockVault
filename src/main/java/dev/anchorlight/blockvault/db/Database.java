@@ -346,6 +346,104 @@ public final class Database {
         }
     }
 
+    // ----------------------------------------------------------------- lookups
+
+    public record SubmissionRow(String material, UUID uuid, String name,
+                                int points, java.sql.Timestamp submittedAt) {}
+
+    /** Who donated {@code material} and when, or null if still outstanding. Blocking. */
+    public SubmissionRow submission(String material) {
+        try (Connection c = ds.getConnection();
+             PreparedStatement ps = c.prepareStatement(
+                     "SELECT s.material, s.uuid, c.last_name, s.points, s.submitted_at "
+                     + "FROM bv_submission s JOIN bv_contributor c ON c.uuid = s.uuid "
+                     + "WHERE s.material = ? AND s.edition = ?")) {
+            ps.setString(1, material);
+            ps.setString(2, edition);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (!rs.next()) return null;
+                return new SubmissionRow(rs.getString(1), fromBytes(rs.getBytes(2)),
+                        rs.getString(3), rs.getInt(4), rs.getTimestamp(5));
+            }
+        } catch (SQLException e) {
+            plugin.getLogger().severe("Submission lookup failed: " + e.getMessage());
+            return null;
+        }
+    }
+
+    public record MyStats(long points, long blocks, int rank) {}
+
+    /** Personal totals for {@code uuid}. Blocking. */
+    public MyStats myStats(UUID uuid) {
+        long points = 0, blocks = 0;
+        try (Connection c = ds.getConnection();
+             PreparedStatement ps = c.prepareStatement(
+                     "SELECT points, blocks_given FROM bv_contributor WHERE uuid = ?")) {
+            ps.setBytes(1, toBytes(uuid));
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) { points = rs.getLong(1); blocks = rs.getLong(2); }
+            }
+        } catch (SQLException e) {
+            plugin.getLogger().severe("Stats query failed: " + e.getMessage());
+        }
+        return new MyStats(points, blocks, rankOf(uuid));
+    }
+
+    // ----------------------------------------------------------------- admin
+
+    public record RevokeResult(boolean ok, UUID donor, int pointsRefunded) {}
+
+    /** Reverse a submission: delete it, refund the donor, audit. Blocking. */
+    public RevokeResult revoke(String material, UUID actor) {
+        try (Connection c = ds.getConnection()) {
+            c.setAutoCommit(false);
+            try {
+                UUID donor;
+                int points;
+                try (PreparedStatement ps = c.prepareStatement(
+                        "SELECT uuid, points FROM bv_submission WHERE material = ? AND edition = ?")) {
+                    ps.setString(1, material);
+                    ps.setString(2, edition);
+                    try (ResultSet rs = ps.executeQuery()) {
+                        if (!rs.next()) { c.rollback(); return new RevokeResult(false, null, 0); }
+                        donor = fromBytes(rs.getBytes(1));
+                        points = rs.getInt(2);
+                    }
+                }
+                try (PreparedStatement ps = c.prepareStatement(
+                        "DELETE FROM bv_submission WHERE material = ? AND edition = ?")) {
+                    ps.setString(1, material);
+                    ps.setString(2, edition);
+                    ps.executeUpdate();
+                }
+                try (PreparedStatement ps = c.prepareStatement(
+                        "UPDATE bv_contributor SET points = GREATEST(0, points - ?), "
+                        + "blocks_given = GREATEST(0, blocks_given - 1) WHERE uuid = ?")) {
+                    ps.setInt(1, points);
+                    ps.setBytes(2, toBytes(donor));
+                    ps.executeUpdate();
+                }
+                try (PreparedStatement ps = c.prepareStatement(
+                        "INSERT INTO bv_audit (actor,action,material,detail) VALUES (?,?,?,?)")) {
+                    ps.setBytes(1, toBytes(actor));
+                    ps.setString(2, "revoke");
+                    ps.setString(3, material);
+                    ps.setString(4, "{\"points\":" + points + "}");
+                    ps.executeUpdate();
+                }
+                c.commit();
+                collected.remove(material);
+                return new RevokeResult(true, donor, points);
+            } catch (SQLException e) {
+                c.rollback();
+                throw e;
+            }
+        } catch (SQLException e) {
+            plugin.getLogger().severe("Revoke failed for " + material + ": " + e.getMessage());
+            return new RevokeResult(false, null, 0);
+        }
+    }
+
     public record LeaderRow(UUID uuid, String name, long points, long blocks) {}
 
     /** Top {@code limit} contributors, then the viewer's own row if outside it. Blocking. */
