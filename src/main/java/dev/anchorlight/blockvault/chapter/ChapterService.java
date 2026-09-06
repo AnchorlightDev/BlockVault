@@ -125,11 +125,19 @@ public final class ChapterService {
             plugin.getServer().broadcastMessage(plugin.prefix()
                     + "§7Unlocked early — the previous floor is nearly complete.");
         }
+        plugin.webhook().chapterOpened(row.chapter(), row.title());
 
         plugin.getServer().getOnlinePlayers().forEach(p -> {
             p.sendTitle("§6Chapter " + row.chapter(), "§e" + row.title(), 10, 70, 20);
             p.playSound(p.getLocation(), Sound.UI_TOAST_CHALLENGE_COMPLETE, 1f, 1f);
         });
+
+        org.bukkit.boss.BossBar bar = plugin.getServer().createBossBar(
+                "§6Chapter " + row.chapter() + " — " + row.title() + " is open",
+                org.bukkit.boss.BarColor.YELLOW, org.bukkit.boss.BarStyle.SOLID);
+        bar.setProgress(1.0);
+        plugin.getServer().getOnlinePlayers().forEach(bar::addPlayer);
+        plugin.getServer().getScheduler().runTaskLater(plugin, bar::removeAll, 200L);
 
         // Fireworks at the leader panel, if the world is up.
         Location at = plugin.resolve(plugin.manifest().leader("head"));

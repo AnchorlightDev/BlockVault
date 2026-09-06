@@ -193,6 +193,22 @@ public final class Database {
         return collected.size();
     }
 
+    /** Every material recorded in bv_target for this edition. Blocking. */
+    public java.util.Set<String> targetMaterials() {
+        java.util.Set<String> out = new java.util.HashSet<>();
+        try (Connection c = ds.getConnection();
+             PreparedStatement ps = c.prepareStatement(
+                     "SELECT material FROM bv_target WHERE edition = ?")) {
+            ps.setString(1, edition);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) out.add(rs.getString(1));
+            }
+        } catch (SQLException e) {
+            plugin.getLogger().severe("Target material query failed: " + e.getMessage());
+        }
+        return out;
+    }
+
     /** material -> cached profile JSON (may be null) for this edition. Blocking. */
     public java.util.Map<String, String> allProfiles() {
         java.util.Map<String, String> out = new java.util.HashMap<>();

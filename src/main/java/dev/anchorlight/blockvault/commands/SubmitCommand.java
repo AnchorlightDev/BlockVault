@@ -97,6 +97,9 @@ public class SubmitCommand implements CommandExecutor {
                         plugin.tell(player, "§aDonated " + pretty + "! §7(+" + points
                                 + (points == 1 ? " point)" : " points)"));
                         celebrate(player, entry.rarity());
+                        if ("rare".equals(entry.rarity())) {
+                            plugin.webhook().rareSubmission(material, player.getName(), points);
+                        }
                     }
                 }
             });

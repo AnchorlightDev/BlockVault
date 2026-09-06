@@ -9,7 +9,9 @@ import dev.anchorlight.blockvault.model.Manifest;
 import dev.anchorlight.blockvault.model.Region;
 import dev.anchorlight.blockvault.util.FileUtil;
 import dev.anchorlight.blockvault.util.ScheduleUtil;
+import dev.anchorlight.blockvault.util.StartupValidation;
 import dev.anchorlight.blockvault.util.VaultUtil;
+import dev.anchorlight.blockvault.util.Webhook;
 import org.bukkit.ChatColor;
 import org.bukkit.Location;
 import org.bukkit.World;
@@ -28,6 +30,7 @@ public final class BlockVault extends JavaPlugin {
     private Database database;
     private Manifest manifest;
     private ChapterService chapters;
+    private Webhook webhook;
     private Region region;
 
     public static BlockVault get() {
@@ -68,6 +71,9 @@ public final class BlockVault extends JavaPlugin {
         VaultUtil vaultUtil = new VaultUtil(this);
 
         this.chapters = new ChapterService(this);
+        this.webhook = new Webhook(this);
+
+        StartupValidation.run(this);
 
         register("bvstart", new StartCommand(this));
         register("bvsubmit", new SubmitCommand(this));
@@ -109,6 +115,10 @@ public final class BlockVault extends JavaPlugin {
 
     public ChapterService chapters() {
         return chapters;
+    }
+
+    public Webhook webhook() {
+        return webhook;
     }
 
     /**

@@ -78,7 +78,7 @@ public final class AdminCommand implements CommandExecutor, TabCompleter {
             plugin.tell(sender, "§cOrigin world is not loaded.");
             return;
         }
-        int frames = 0, heads = 0;
+        int frames = 0;
         for (TargetEntry e : plugin.manifest().entries().values()) {
             Location frameLoc = plugin.resolve(e.frame());
             if (!hasItemFrame(world, frameLoc)) {
@@ -87,6 +87,7 @@ public final class AdminCommand implements CommandExecutor, TabCompleter {
                     f.setFixed(true);
                     f.setInvulnerable(true);
                     f.setSilent(true);
+                    f.setGlowing("rare".equals(e.rarity())); // highlight rare-tier shelves
                 });
                 frames++;
             }

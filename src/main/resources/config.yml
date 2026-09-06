@@ -42,5 +42,10 @@ points:
   uncommon: 5
   rare: 10
 
+# Optional Discord webhook for rare submissions and chapter unlocks.
+# Doubles as an off-server recovery log. Leave blank to disable.
+discord:
+  webhook-url: ""
+
 lang:
   prefix: "&8&l[&3BV&8&l] "
