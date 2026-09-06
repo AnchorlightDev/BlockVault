@@ -1,5 +1,6 @@
 package dev.anchorlight.blockvault;
 
+import dev.anchorlight.blockvault.advancement.AdvancementService;
 import dev.anchorlight.blockvault.chapter.ChapterService;
 import dev.anchorlight.blockvault.commands.*;
 import dev.anchorlight.blockvault.db.Database;
@@ -32,11 +33,20 @@ public final class BlockVault extends JavaPlugin {
     private Manifest manifest;
     private ChapterService chapters;
     private DisplayService displays;
+    private AdvancementService advancements;
     private Webhook webhook;
     private Region region;
 
     public static BlockVault get() {
         return instance;
+    }
+
+    @Override
+    public void onLoad() {
+        instance = this;
+        // Datapack must land before worlds load so the game picks it up.
+        this.advancements = new AdvancementService(this);
+        this.advancements.installDatapack();
     }
 
     @Override
@@ -128,6 +138,10 @@ public final class BlockVault extends JavaPlugin {
 
     public DisplayService displays() {
         return displays;
+    }
+
+    public AdvancementService advancements() {
+        return advancements;
     }
 
     /**

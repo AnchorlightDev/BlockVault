@@ -56,6 +56,9 @@ HikariCP and the MySQL driver are pulled at runtime via `libraries:` in
   `iron_bars` seal and runs a broadcast/title/fireworks/BossBar ceremony.
 - **The target list is frozen per `edition`.** New blocks go in as a new edition,
   never the running one.
+- **Chapter advancements** ship as a bundled datapack, written into
+  `<world>/datapacks/blockvault/` on load and granted by the plugin when a
+  chapter reaches 100%. A world reload may be needed the first time.
 
 ## Commands
 

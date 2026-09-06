@@ -1,0 +1,14 @@
+{
+  "parent": "blockvault:chapter_4",
+  "display": {
+    "icon": { "id": "minecraft:nether_bricks" },
+    "title": { "text": "The Nether" },
+    "description": { "text": "Complete Chapter 5 of the Vault — The Forge" },
+    "frame": "goal",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "criteria": { "granted": { "trigger": "minecraft:impossible" } },
+  "requirements": [["granted"]]
+}

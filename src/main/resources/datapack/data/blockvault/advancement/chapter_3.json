@@ -1,0 +1,14 @@
+{
+  "parent": "blockvault:chapter_2",
+  "display": {
+    "icon": { "id": "minecraft:deepslate_bricks" },
+    "title": { "text": "Into the Deep" },
+    "description": { "text": "Complete Chapter 3 of the Vault — The Deep" },
+    "frame": "goal",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "criteria": { "granted": { "trigger": "minecraft:impossible" } },
+  "requirements": [["granted"]]
+}

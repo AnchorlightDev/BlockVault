@@ -100,6 +100,7 @@ public final class ChapterService {
                 p.playSound(p.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, 1f, 1.2f));
         plugin.webhook().chapterOpened(row.chapter(), row.title() + " (complete)");
         plugin.displays().refresh();
+        plugin.advancements().grantAll(row.chapter());
         plugin.getLogger().info("Chapter " + row.chapter() + " reached 100%.");
     }
 

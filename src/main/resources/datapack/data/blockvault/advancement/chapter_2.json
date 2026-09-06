@@ -1,0 +1,14 @@
+{
+  "parent": "blockvault:chapter_1",
+  "display": {
+    "icon": { "id": "minecraft:oak_sapling" },
+    "title": { "text": "Green & Growing" },
+    "description": { "text": "Complete Chapter 2 of the Vault — The Conservatory" },
+    "frame": "goal",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "criteria": { "granted": { "trigger": "minecraft:impossible" } },
+  "requirements": [["granted"]]
+}

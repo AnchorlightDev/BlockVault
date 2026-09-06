@@ -389,6 +389,22 @@ public final class Database {
         }
     }
 
+    /** Chapters with a completed_at stamp for this edition. Blocking. */
+    public java.util.Set<Integer> completedChapters() {
+        java.util.Set<Integer> out = new java.util.HashSet<>();
+        try (Connection c = ds.getConnection();
+             PreparedStatement ps = c.prepareStatement(
+                     "SELECT chapter FROM bv_chapter WHERE edition = ? AND completed_at IS NOT NULL")) {
+            ps.setString(1, edition);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) out.add(rs.getInt(1));
+            }
+        } catch (SQLException e) {
+            plugin.getLogger().severe("Completed-chapter query failed: " + e.getMessage());
+        }
+        return out;
+    }
+
     /** Top contributors for a given calendar month (YYYY-MM). Blocking. */
     public java.util.List<LeaderRow> monthlyTop(String yearMonth, int limit) {
         java.util.List<LeaderRow> rows = new java.util.ArrayList<>();

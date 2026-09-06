@@ -1,0 +1,14 @@
+{
+  "display": {
+    "icon": { "id": "minecraft:chiseled_stone_bricks" },
+    "title": { "text": "Foundations" },
+    "description": { "text": "Complete Chapter 1 of the Vault — The Undercroft" },
+    "background": "minecraft:textures/gui/advancements/backgrounds/stone.png",
+    "frame": "goal",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "criteria": { "granted": { "trigger": "minecraft:impossible" } },
+  "requirements": [["granted"]]
+}
