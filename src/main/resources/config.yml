@@ -1,128 +1,46 @@
-# BlockVault
+# BlockVault configuration
+#
+# This file holds database credentials. It is git-ignored - never commit a
+# populated copy. See src/main/resources/blockvault_schema.sql for the schema;
+# apply it before first start.
 
-# Vault settings
-vault:
-  starttime: null
-  started: false
-  updateinterval: 15
-  region:
-    upperregion:
-      X: -138
-      Y: 97
-      Z: 118
-    lowerregion:
-      X: 133
-      Y: 68
-      Z: 96
-  excludeditems:
-    - debug_stick
-    - structure_block
-    - barrier
-    - command_block
-    - chain_command_block
-    - repeating_command_block
-    - light
-    - jigsaw
-    - knowledge_book
-    - spawner
-    - end_portal_frame
-    - frosted_ice
-    - bedrock
-    - dragon_egg
-    - piglin_brute_spawn_egg
-    - parrot_spawn_egg
-    - turtle_spawn_egg
-    - zombie_spawn_egg
-    - mule_spawn_egg
-    - armadillo_spawn_egg
-    - tropical_fish_spawn_egg
-    - blaze_spawn_egg
-    - shulker_spawn_egg
-    - sniffer_spawn_egg
-    - polar_bear_spawn_egg
-    - phantom_spawn_egg
-    - guardian_spawn_egg
-    - ravager_spawn_egg
-    - wandering_trader_spawn_egg
-    - villager_spawn_egg
-    - wither_skeleton_spawn_egg
-    - warden_spawn_egg
-    - ender_dragon_spawn_egg
-    - bat_spawn_egg
-    - sniffer_egg
-    - camel_spawn_egg
-    - creeper_spawn_egg
-    - breeze_spawn_egg
-    - iron_golem_spawn_egg
-    - hoglin_spawn_egg
-    - sheep_spawn_egg
-    - ocelot_spawn_egg
-    - witch_spawn_egg
-    - creaking_spawn_egg
-    - enderman_spawn_egg
-    - donkey_spawn_egg
-    - frog_spawn_egg
-    - llama_spawn_egg
-    - horse_spawn_egg
-    - glow_squid_spawn_egg
-    - bogged_spawn_egg
-    - chicken_spawn_egg
-    - piglin_spawn_egg
-    - wolf_spawn_egg
-    - cat_spawn_egg
-    - silverfish_spawn_egg
-    - rabbit_spawn_egg
-    - strider_spawn_egg
-    - slime_spawn_egg
-    - vindicator_spawn_egg
-    - wither_spawn_egg
-    - zombified_piglin_spawn_egg
-    - drowned_spawn_egg
-    - zombie_horse_spawn_egg
-    - husk_spawn_egg
-    - zombie_villager_spawn_egg
-    - trader_llama_spawn_egg
-    - mooshroom_spawn_egg
-    - stray_spawn_egg
-    - cow_spawn_egg
-    - vex_spawn_egg
-    - skeleton_horse_spawn_egg
-    - salmon_spawn_egg
-    - pig_spawn_egg
-    - cod_spawn_egg
-    - allay_spawn_egg
-    - dolphin_spawn_egg
-    - elder_guardian_spawn_egg
-    - zoglin_spawn_egg
-    - squid_spawn_egg
-    - cave_spider_spawn_egg
-    - ghast_spawn_egg
-    - axolotl_spawn_egg
-    - skeleton_spawn_egg
-    - pufferfish_spawn_egg
-    - goat_spawn_egg
-    - endermite_spawn_egg
-    - bee_spawn_egg
-    - snow_golem_spawn_egg
-    - evoker_spawn_egg
-    - panda_spawn_egg
-    - pillager_spawn_egg
-    - fox_spawn_egg
-    - spider_spawn_egg
-    - magma_cube_spawn_egg
-    - hoglin_spawn_egg
-    - sheep_spawn_egg
+# Current target-list version. Blocks are frozen per edition (see brief section 1.3).
+edition: '26.2'
 
-timer:
-  enabled: false
-  timer-end: null
+database:
+  host: localhost
+  port: 3306
+  name: blockvault
+  user: blockvault
+  password: changeme
+  # Extra HikariCP tuning. Pool is small - the plugin is not write-heavy.
+  pool:
+    maximum-pool-size: 6
+    minimum-idle: 1
+    connection-timeout-ms: 8000
+    # Keep below the server's wait_timeout.
+    max-lifetime-ms: 1740000
 
-# Points system settings
+# Where the schematic origin sits in the live world. Every manifest coordinate
+# is relative to this point and is added to it at runtime.
+origin:
+  world: world
+  x: 0
+  y: 100
+  z: 0
+
+# State reconciliation (/bvupdatestate and the scheduled pass).
+update:
+  # Minutes between scheduled reconciliation passes. Must be > 0.
+  interval-minutes: 15
+  # Seconds to wait after enable before the first pass, so worlds are loaded.
+  startup-delay-seconds: 30
+
+# Points awarded per rarity. Lowercase keys - Bukkit paths are case-sensitive.
 points:
   common: 1
   uncommon: 5
   rare: 10
 
-# Language settings
 lang:
-  prefix: "&8&l[&3BD&8&l]"
+  prefix: "&8&l[&3BV&8&l] "

@@ -1,45 +1,27 @@
 package dev.anchorlight.blockvault.commands;
 
-import dev.anchorlight.blockvault.util.FileUtil;
+import dev.anchorlight.blockvault.BlockVault;
 import dev.anchorlight.blockvault.util.VaultUtil;
-import org.bukkit.Bukkit;
-import org.bukkit.Location;
-import org.bukkit.Material;
-import org.bukkit.World;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
-import org.bukkit.entity.Entity;
-import org.bukkit.entity.ItemFrame;
-import org.bukkit.entity.Player;
-import org.bukkit.plugin.Plugin;
 
 public class UpdateStateCommand implements CommandExecutor {
-    private final Plugin plugin;
-    private final VaultUtil vaultUtil;
-    private final FileUtil fileUtil;
 
-    public UpdateStateCommand(Plugin plugin) {
-        this.plugin = plugin;
+    private final VaultUtil vaultUtil;
+
+    public UpdateStateCommand(BlockVault plugin) {
         this.vaultUtil = new VaultUtil(plugin);
-        this.fileUtil = new FileUtil(plugin);
     }
 
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
-        if (!(sender instanceof Player)) {
-            sender.sendMessage("§cOnly players can use this command!");
-            return true;
-        }
-
-        Player player = (Player) sender;
-
-        if (!player.hasPermission("blockvault.updatestate")) {
+        if (!sender.hasPermission("blockvault.updatestate")) {
             sender.sendMessage("§cYou don't have permission to use this command!");
             return true;
         }
-
-        vaultUtil.updateVaultState(player);
+        // Console-runnable by design.
+        vaultUtil.updateVaultState(sender);
         return true;
     }
 }

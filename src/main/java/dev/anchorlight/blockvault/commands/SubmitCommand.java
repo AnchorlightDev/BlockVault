@@ -1,112 +1,156 @@
 package dev.anchorlight.blockvault.commands;
 
-import dev.anchorlight.blockvault.util.FileUtil;
+import dev.anchorlight.blockvault.BlockVault;
+import dev.anchorlight.blockvault.db.Database;
+import dev.anchorlight.blockvault.model.TargetEntry;
+import dev.anchorlight.blockvault.util.HeadUtil;
 import dev.anchorlight.blockvault.util.VaultUtil;
+import org.bukkit.GameMode;
+import org.bukkit.Location;
 import org.bukkit.Material;
+import org.bukkit.Sound;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
-import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
-import org.bukkit.inventory.meta.ItemMeta;
-import org.bukkit.plugin.Plugin;
 
-import java.io.File;
-import java.io.IOException;
-import java.util.List;
-
-import static dev.anchorlight.blockvault.util.VaultUtil.*;
-
+/**
+ * Submit the held block. Order is always: write -> confirm commit -> consume.
+ * If the database is unreachable the item stays in the player's hand.
+ */
 public class SubmitCommand implements CommandExecutor {
-    private final Plugin plugin;
+
+    private final BlockVault plugin;
     private final VaultUtil vaultUtil;
 
-    public SubmitCommand(Plugin plugin) {
+    public SubmitCommand(BlockVault plugin) {
         this.plugin = plugin;
         this.vaultUtil = new VaultUtil(plugin);
     }
 
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
-        if (!(sender instanceof Player)) {
-            sender.sendMessage("§cOnly players can use this command!");
+        if (!(sender instanceof Player player)) {
+            plugin.tell(sender, "§cOnly players can use this command!");
             return true;
         }
-
-        Player player = (Player) sender;
-
+        if (!player.hasPermission("blockvault.submit")) {
+            plugin.tell(player, "§cYou don't have permission to submit blocks.");
+            return true;
+        }
         if (!vaultUtil.hasStarted()) {
-            sender.sendMessage("§cYou cannot submit items as the Vault has not been opened yet.");
+            plugin.tell(player, "§cThe vault has not been opened yet.");
+            return true;
+        }
+        if (player.getGameMode() == GameMode.CREATIVE) {
+            plugin.tell(player, "§cSubmissions are not allowed in creative mode.");
+            return true;
+        }
+        if (!inRegion(player.getLocation())) {
+            plugin.tell(player, "§cYou must be inside the vault to submit a block.");
             return true;
         }
 
-        ItemStack itemInHand = player.getInventory().getItemInMainHand();
-
-        if (itemInHand == null || itemInHand.getType() == Material.AIR) {
-            player.sendMessage("§cYou are not holding any item or block!");
+        ItemStack held = player.getInventory().getItemInMainHand();
+        if (held.getType() == Material.AIR || held.getAmount() < 1) {
+            plugin.tell(player, "§cYou are not holding anything.");
             return true;
         }
 
-        // Get item display name or fallback to material name
-        ItemMeta meta = itemInHand.getItemMeta();
-        String displayName = (meta != null && meta.hasDisplayName()) ? meta.getDisplayName() : formatMaterialName(itemInHand.getType());
-        String itemName = itemInHand.getType().name().toLowerCase();
+        Material type = held.getType();
+        String material = type.getKey().getKey(); // lowercase registry id
+        String pretty = VaultUtil.formatMaterialName(type);
 
-        // Load configuration files
-        File vaultDataFile = new File(plugin.getDataFolder(), "vault_data.yml");
-        File vaultItemsFile = new File(plugin.getDataFolder(), "vault_items.yml");
-        File configFile = new File(plugin.getDataFolder(), "config.yml");
-
-        YamlConfiguration vaultData = YamlConfiguration.loadConfiguration(vaultDataFile);
-        YamlConfiguration vaultItems = YamlConfiguration.loadConfiguration(vaultItemsFile);
-        YamlConfiguration config = YamlConfiguration.loadConfiguration(configFile);
-
-        // Check if item has already been collected globally
-        String collector = vaultData.getString("vault_data.global_collected_items." + itemName);
-        if (collector != null) {
-            player.sendMessage("§cItem " + displayName + " has already been collected by " + collector + "!");
+        TargetEntry entry = plugin.manifest().entry(material);
+        if (entry == null) {
+            plugin.tell(player, "§c" + pretty + " is not part of this collection.");
             return true;
         }
 
-        // Add item to player's collected items
-        List<String> playerItems = vaultData.getStringList("vault_data." + player.getName() + ".collected_items");
-        if (playerItems.contains(itemName)) {
-            player.sendMessage("§cYou have already collected " + displayName + "!");
+        Database db = plugin.database();
+        if (db.isCollected(material)) {
+            plugin.tell(player, "§e" + pretty + " has already been donated.");
             return true;
         }
 
-        // Determine the item's point category and corresponding points
-        String category = vaultItems.getString("items." + itemName, "COMMON"); // Default to COMMON
-        int pointsPerCategory = config.getInt("points." + category, 1); // Default to 1 point
+        int points = plugin.getConfig().getInt("points." + entry.rarity(), 1);
+        org.bukkit.profile.PlayerProfile profile = player.getPlayerProfile();
+        String profileJson = HeadUtil.toJson(profile);
 
-        playerItems.add(itemName);
+        plugin.tell(player, "§7Submitting " + pretty + "…");
 
-        vaultData.set("vault_data." + player.getName() + ".collected_items", playerItems);
+        plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
+            Database.SubmitOutcome outcome =
+                    db.submit(material, player.getUniqueId(), player.getName(), points, profileJson);
 
-        // Update player points
-        int currentPoints = vaultData.getInt("vault_data." + player.getName() + ".points", 0);
-        vaultData.set("vault_data." + player.getName() + ".points", currentPoints + pointsPerCategory);
-
-        // Update global collected items
-        vaultData.set("vault_data.global_collected_items." + itemName, player.getName());
-
-        try {
-            vaultData.save(vaultDataFile);
-
-            // Remove one item from the player's hand
-            if (itemInHand.getAmount() > 1) {
-                itemInHand.setAmount(itemInHand.getAmount() - 1);
-            } else {
-                player.getInventory().setItemInMainHand(null);
-            }
-
-            player.sendMessage("§aSuccessfully added " + displayName + " to your vault! (§b+" + pointsPerCategory + " points§a)");
-        } catch (IOException e) {
-            player.sendMessage("§cFailed to save collected item. Please try again.");
-            e.printStackTrace();
-        }
-
+            plugin.getServer().getScheduler().runTask(plugin, () -> {
+                switch (outcome) {
+                    case ALREADY_TAKEN -> plugin.tell(player,
+                            "§e" + pretty + " was donated by someone else first. Your block is untouched.");
+                    case DB_ERROR -> plugin.tell(player,
+                            "§cCould not record that right now - your block is still in your hand. Please retry.");
+                    case OK -> {
+                        // Write committed. Only now is it safe to consume the item.
+                        consumeOne(player, type);
+                        placeHead(entry, profile);
+                        plugin.tell(player, "§aDonated " + pretty + "! §7(+" + points
+                                + (points == 1 ? " point)" : " points)"));
+                        celebrate(player, entry.rarity());
+                    }
+                }
+            });
+        });
         return true;
+    }
+
+    private void consumeOne(Player player, Material expected) {
+        ItemStack held = player.getInventory().getItemInMainHand();
+        if (held.getType() != expected || held.getAmount() < 1) {
+            // Player swapped items between the command and the commit. The block
+            // is already recorded; not consuming it is a harmless edge case.
+            plugin.getLogger().warning(player.getName() + " moved " + expected
+                    + " before it could be consumed; it was recorded but not removed.");
+            return;
+        }
+        if (held.getAmount() > 1) {
+            held.setAmount(held.getAmount() - 1);
+        } else {
+            player.getInventory().setItemInMainHand(null);
+        }
+    }
+
+    private void placeHead(TargetEntry entry, org.bukkit.profile.PlayerProfile profile) {
+        // The head is only shown once the chapter floor is open. Chapter gating
+        // is applied in the reconciliation pass; place unconditionally for now.
+        Location loc = plugin.resolve(entry.head());
+        if (loc.getWorld() == null) return;
+        HeadUtil.placeHead(loc, entry.face(), profile);
+    }
+
+    private void celebrate(Player player, String rarity) {
+        Sound sound = switch (rarity) {
+            case "rare" -> Sound.UI_TOAST_CHALLENGE_COMPLETE;
+            case "uncommon" -> Sound.ENTITY_PLAYER_LEVELUP;
+            default -> Sound.ENTITY_EXPERIENCE_ORB_PICKUP;
+        };
+        player.playSound(player.getLocation(), sound, 1f, 1f);
+    }
+
+    private boolean inRegion(Location loc) {
+        if (loc.getWorld() == null || plugin.originWorld() == null
+                || !loc.getWorld().equals(plugin.originWorld())) {
+            return false;
+        }
+        int ox = plugin.getConfig().getInt("origin.x");
+        int oy = plugin.getConfig().getInt("origin.y");
+        int oz = plugin.getConfig().getInt("origin.z");
+        int[] lo = plugin.manifest().min();
+        int[] hi = plugin.manifest().max();
+        int margin = 3;
+        int x = loc.getBlockX() - ox, y = loc.getBlockY() - oy, z = loc.getBlockZ() - oz;
+        return x >= lo[0] - margin && x <= hi[0] + margin
+                && y >= lo[1] - margin && y <= hi[1] + margin
+                && z >= lo[2] - margin && z <= hi[2] + margin;
     }
 }

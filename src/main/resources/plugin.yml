@@ -2,6 +2,9 @@ name: BlockVault
 version: '1.0.0'
 main: dev.anchorlight.blockvault.BlockVault
 api-version: '26.2'
+libraries:
+  - com.zaxxer:HikariCP:5.1.0
+  - com.mysql:mysql-connector-j:8.4.0
 commands:
   bvsubmit:
     description: Submit the block you are holding to the vault.
