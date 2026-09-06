@@ -72,6 +72,7 @@ public final class Database {
             runSchema(c);
             seedTargets(c, manifest);
             seedChapters(c, manifest);
+            syncChapterDates(c);
             warmCollected(c);
         }
         plugin.getLogger().info("Database ready: " + collected.size()
@@ -154,6 +155,46 @@ public final class Database {
                 } else {
                     ps.setInt(5, seal[0]); ps.setInt(6, seal[1]); ps.setInt(7, seal[2]);
                 }
+                ps.addBatch();
+            }
+            ps.executeBatch();
+        }
+    }
+
+    /**
+     * Push the configured open dates onto any chapter that has not opened yet.
+     * Runs every start so an admin can move a date mid-season by editing config.
+     */
+    /** Public re-sync for /bvreload. Blocking - call async. */
+    public void resyncChapterDates() {
+        try (Connection c = ds.getConnection()) {
+            syncChapterDates(c);
+        } catch (SQLException e) {
+            plugin.getLogger().severe("Chapter date re-sync failed: " + e.getMessage());
+        }
+    }
+
+    private void syncChapterDates(Connection c) throws SQLException {
+        var section = plugin.getConfig().getConfigurationSection("chapters");
+        if (section == null) return;
+        try (PreparedStatement ps = c.prepareStatement(
+                "UPDATE bv_chapter SET opens_at = ? "
+                + "WHERE chapter = ? AND edition = ? AND opened_at IS NULL")) {
+            for (String key : section.getKeys(false)) {
+                String raw = section.getString(key + ".opens-at");
+                if (raw == null || raw.isBlank()) continue;
+                java.sql.Timestamp ts;
+                try {
+                    ts = java.sql.Timestamp.valueOf(
+                            java.time.LocalDateTime.parse(raw));
+                } catch (Exception e) {
+                    plugin.getLogger().warning("chapters." + key
+                            + ".opens-at is not a valid ISO date-time: " + raw);
+                    continue;
+                }
+                ps.setTimestamp(1, ts);
+                ps.setInt(2, Integer.parseInt(key));
+                ps.setString(3, edition);
                 ps.addBatch();
             }
             ps.executeBatch();

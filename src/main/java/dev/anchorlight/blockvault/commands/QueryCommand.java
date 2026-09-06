@@ -184,6 +184,8 @@ public final class QueryCommand implements CommandExecutor, TabCompleter {
     private void reload(CommandSender sender) {
         plugin.reloadConfig();
         plugin.invalidateRegion();
+        plugin.getServer().getScheduler().runTaskAsynchronously(plugin,
+                () -> plugin.database().resyncChapterDates());
         plugin.tell(sender, "§aConfiguration reloaded.");
     }
 

@@ -42,6 +42,18 @@ points:
   uncommon: 5
   rare: 10
 
+# Scheduled open dates per chapter (ISO local date-time). A chapter opens on
+# this date OR when the previous chapter reaches 90%, whichever comes first.
+# Re-read every start and applied to any chapter not yet open, so you can adjust
+# a date mid-season. Chapter 1 opens with /bvstart regardless.
+chapters:
+  '1': { opens-at: '2026-01-01T00:00:00' }
+  '2': { opens-at: '2026-02-15T00:00:00' }
+  '3': { opens-at: '2026-05-15T00:00:00' }
+  '4': { opens-at: '2026-08-01T00:00:00' }
+  '5': { opens-at: '2026-09-15T00:00:00' }
+  '6': { opens-at: '2026-12-01T00:00:00' }
+
 # Optional Discord webhook for rare submissions and chapter unlocks.
 # Doubles as an off-server recovery log. Leave blank to disable.
 discord:
