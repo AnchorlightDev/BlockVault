@@ -85,7 +85,7 @@ def main():
     # vault_slots.json  -  manifest
     manifest = {
         "version": VERSION, "data_version": DATA_VERSION,
-        "entries": [dict(e, section="building" if False else e["section"]) for e in entries],
+        "entries": entries,
         "leader": LEADER, "seals": SEALS,
     }
     (SRC / "vault_slots.json").write_text(
