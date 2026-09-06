@@ -1,4 +1,4 @@
-package me.benrobson.blockvault.util;
+package dev.anchorlight.blockvault.util;
 
 import org.bukkit.Bukkit;
 import org.bukkit.Location;

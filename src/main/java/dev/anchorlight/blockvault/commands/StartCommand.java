@@ -1,19 +1,19 @@
-package me.benrobson.blockvault.commands;
+package dev.anchorlight.blockvault.commands;
 
-import me.benrobson.blockvault.util.FileUtil;
-import me.benrobson.blockvault.util.VaultUtil;
+import dev.anchorlight.blockvault.util.FileUtil;
+import dev.anchorlight.blockvault.util.VaultUtil;
 import org.bukkit.ChatColor;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.plugin.Plugin;
 
-public class bvstart implements CommandExecutor {
+public class StartCommand implements CommandExecutor {
     private final Plugin plugin;
     private final VaultUtil vaultUtil;
     private final FileUtil fileUtil;
 
-    public bvstart(Plugin plugin) {
+    public StartCommand(Plugin plugin) {
         this.plugin = plugin;
         this.vaultUtil = new VaultUtil(plugin);
         this.fileUtil = new FileUtil(plugin);

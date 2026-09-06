@@ -1,4 +1,4 @@
-package me.benrobson.blockvault.util;
+package dev.anchorlight.blockvault.util;
 
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.plugin.Plugin;

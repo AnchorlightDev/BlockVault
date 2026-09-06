@@ -1,20 +1,38 @@
 name: BlockVault
 version: '1.0.0'
-main: me.benrobson.blockvault.BlockVault
-api-version: '1.21'
+main: dev.anchorlight.blockvault.BlockVault
+api-version: '26.2'
 commands:
   bvsubmit:
-    description: Command
+    description: Submit the block you are holding to the vault.
     usage: /bvsubmit
   bvleaderboard:
-    description: Command
+    description: Show the top contributors.
     usage: /bvleaderboard
   bvprogress:
-    description: Command
+    description: Show current chapter and overall progress.
     usage: /bvprogress
   bvstart:
-    description: Command
+    description: Open the collection event.
     usage: /bvstart
+    permission: blockvault.start
   bvupdatestate:
-    description: Command
+    description: Reconcile the world display against the database.
     usage: /bvupdatestate
+    permission: blockvault.updatestate
+permissions:
+  blockvault.submit:
+    description: Allows submitting blocks to the vault.
+    default: true
+  blockvault.progress:
+    description: Allows viewing vault progress.
+    default: true
+  blockvault.leaderboard:
+    description: Allows viewing the leaderboard.
+    default: true
+  blockvault.start:
+    description: Allows opening and closing the event.
+    default: op
+  blockvault.updatestate:
+    description: Allows reconciling the world display against the database.
+    default: op

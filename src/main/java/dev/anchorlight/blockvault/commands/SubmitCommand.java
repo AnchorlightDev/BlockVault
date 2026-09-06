@@ -1,7 +1,7 @@
-package me.benrobson.blockvault.commands;
+package dev.anchorlight.blockvault.commands;
 
-import me.benrobson.blockvault.util.FileUtil;
-import me.benrobson.blockvault.util.VaultUtil;
+import dev.anchorlight.blockvault.util.FileUtil;
+import dev.anchorlight.blockvault.util.VaultUtil;
 import org.bukkit.Material;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
@@ -16,13 +16,13 @@ import java.io.File;
 import java.io.IOException;
 import java.util.List;
 
-import static me.benrobson.blockvault.util.VaultUtil.*;
+import static dev.anchorlight.blockvault.util.VaultUtil.*;
 
-public class bvsubmit implements CommandExecutor {
+public class SubmitCommand implements CommandExecutor {
     private final Plugin plugin;
     private final VaultUtil vaultUtil;
 
-    public bvsubmit(Plugin plugin) {
+    public SubmitCommand(Plugin plugin) {
         this.plugin = plugin;
         this.vaultUtil = new VaultUtil(plugin);
     }

@@ -1,6 +1,6 @@
-package me.benrobson.blockvault.commands;
+package dev.anchorlight.blockvault.commands;
 
-import me.benrobson.blockvault.util.VaultUtil;
+import dev.anchorlight.blockvault.util.VaultUtil;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
@@ -11,11 +11,11 @@ import org.bukkit.plugin.Plugin;
 import java.io.File;
 import java.util.*;
 
-public class bvleaderboard implements CommandExecutor {
+public class LeaderboardCommand implements CommandExecutor {
     private final Plugin plugin;
     private final VaultUtil vaultUtil;
 
-    public bvleaderboard(Plugin plugin) {
+    public LeaderboardCommand(Plugin plugin) {
         this.plugin = plugin;
         this.vaultUtil = new VaultUtil(plugin);
     }

@@ -1,6 +1,6 @@
-package me.benrobson.blockvault.commands;
+package dev.anchorlight.blockvault.commands;
 
-import me.benrobson.blockvault.util.VaultUtil;
+import dev.anchorlight.blockvault.util.VaultUtil;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
@@ -11,11 +11,11 @@ import org.bukkit.plugin.Plugin;
 import java.io.File;
 import java.util.List;
 
-public class bvprogress implements CommandExecutor {
+public class ProgressCommand implements CommandExecutor {
     private final Plugin plugin;
     private final VaultUtil vaultUtil;
 
-    public bvprogress(Plugin plugin) {
+    public ProgressCommand(Plugin plugin) {
         this.plugin = plugin;
         this.vaultUtil = new VaultUtil(plugin);
     }

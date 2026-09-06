@@ -1,7 +1,7 @@
-package me.benrobson.blockvault.commands;
+package dev.anchorlight.blockvault.commands;
 
-import me.benrobson.blockvault.util.FileUtil;
-import me.benrobson.blockvault.util.VaultUtil;
+import dev.anchorlight.blockvault.util.FileUtil;
+import dev.anchorlight.blockvault.util.VaultUtil;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
@@ -14,12 +14,12 @@ import org.bukkit.entity.ItemFrame;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
 
-public class bvupdatestate implements CommandExecutor {
+public class UpdateStateCommand implements CommandExecutor {
     private final Plugin plugin;
     private final VaultUtil vaultUtil;
     private final FileUtil fileUtil;
 
-    public bvupdatestate(Plugin plugin) {
+    public UpdateStateCommand(Plugin plugin) {
         this.plugin = plugin;
         this.vaultUtil = new VaultUtil(plugin);
         this.fileUtil = new FileUtil(plugin);
