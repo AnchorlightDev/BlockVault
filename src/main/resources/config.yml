@@ -1,0 +1,51 @@
+# BlockVault configuration
+#
+# This file holds database credentials. It is git-ignored - never commit a
+# populated copy. See src/main/resources/blockvault_schema.sql for the schema;
+# apply it before first start.
+
+# Current target-list version. Blocks are frozen per edition (see brief section 1.3).
+edition: '26.2'
+
+database:
+  host: localhost
+  port: 3306
+  name: blockvault
+  user: blockvault
+  password: changeme
+  # Extra HikariCP tuning. Pool is small - the plugin is not write-heavy.
+  pool:
+    maximum-pool-size: 6
+    minimum-idle: 1
+    connection-timeout-ms: 8000
+    # Keep below the server's wait_timeout.
+    max-lifetime-ms: 1740000
+
+# Where the schematic origin sits in the live world. Every manifest coordinate
+# is relative to this point and is added to it at runtime.
+origin:
+  world: world
+  x: 0
+  y: 100
+  z: 0
+
+# State reconciliation (/bvupdatestate and the scheduled pass).
+update:
+  # Minutes between scheduled reconciliation passes. Must be > 0.
+  interval-minutes: 15
+  # Seconds to wait after enable before the first pass, so worlds are loaded.
+  startup-delay-seconds: 30
+
+# Points awarded per rarity. Lowercase keys - Bukkit paths are case-sensitive.
+points:
+  common: 1
+  uncommon: 5
+  rare: 10
+
+# Optional Discord webhook for rare submissions and chapter unlocks.
+# Doubles as an off-server recovery log. Leave blank to disable.
+discord:
+  webhook-url: ""
+
+lang:
+  prefix: "&8&l[&3BV&8&l] "
