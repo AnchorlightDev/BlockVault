@@ -32,12 +32,18 @@ public class LeaderboardCommand implements CommandExecutor {
             return true;
         }
 
+        boolean monthly = args.length > 0 && args[0].equalsIgnoreCase("month");
+        String ym = java.time.YearMonth.now().toString(); // YYYY-MM
+
         plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
-            List<Database.LeaderRow> top = plugin.database().topContributors(10);
-            int ownRank = (sender instanceof Player p) ? plugin.database().rankOf(p.getUniqueId()) : -1;
+            List<Database.LeaderRow> top = monthly
+                    ? plugin.database().monthlyTop(ym, 10)
+                    : plugin.database().topContributors(10);
+            int ownRank = (!monthly && sender instanceof Player p)
+                    ? plugin.database().rankOf(p.getUniqueId()) : -1;
 
             plugin.getServer().getScheduler().runTask(plugin, () -> {
-                plugin.tell(sender, "§aTop contributors");
+                plugin.tell(sender, monthly ? "§aTop contributors — " + ym : "§aTop contributors — all time");
                 if (top.isEmpty()) {
                     sender.sendMessage("§7  Nobody has donated a block yet.");
                     return;

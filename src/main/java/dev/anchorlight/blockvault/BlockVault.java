@@ -3,6 +3,7 @@ package dev.anchorlight.blockvault;
 import dev.anchorlight.blockvault.chapter.ChapterService;
 import dev.anchorlight.blockvault.commands.*;
 import dev.anchorlight.blockvault.db.Database;
+import dev.anchorlight.blockvault.display.DisplayService;
 import dev.anchorlight.blockvault.listener.RegionProtectionListener;
 import dev.anchorlight.blockvault.listener.PlayerGuidanceListener;
 import dev.anchorlight.blockvault.model.Manifest;
@@ -30,6 +31,7 @@ public final class BlockVault extends JavaPlugin {
     private Database database;
     private Manifest manifest;
     private ChapterService chapters;
+    private DisplayService displays;
     private Webhook webhook;
     private Region region;
 
@@ -72,6 +74,7 @@ public final class BlockVault extends JavaPlugin {
 
         this.chapters = new ChapterService(this);
         this.webhook = new Webhook(this);
+        this.displays = new DisplayService(this);
 
         StartupValidation.run(this);
 
@@ -102,11 +105,13 @@ public final class BlockVault extends JavaPlugin {
 
         forceLoadChunks(true);
         chapters.start();
+        displays.start();
         ScheduleUtil.scheduleVaultStateTask(this, vaultUtil, fileUtil);
     }
 
     @Override
     public void onDisable() {
+        if (displays != null) displays.stop();
         if (chapters != null) chapters.stop();
         forceLoadChunks(false);
         if (database != null) database.close();
@@ -119,6 +124,10 @@ public final class BlockVault extends JavaPlugin {
 
     public Webhook webhook() {
         return webhook;
+    }
+
+    public DisplayService displays() {
+        return displays;
     }
 
     /**

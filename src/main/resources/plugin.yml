@@ -10,8 +10,8 @@ commands:
     description: Submit the block you are holding to the vault.
     usage: /bvsubmit
   bvleaderboard:
-    description: Show the top contributors.
-    usage: /bvleaderboard
+    description: Show the top contributors (add 'month' for this month only).
+    usage: /bvleaderboard [month]
   bvprogress:
     description: Show current chapter and overall progress.
     usage: /bvprogress

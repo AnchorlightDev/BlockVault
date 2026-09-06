@@ -329,6 +329,49 @@ public final class Database {
         return rows;
     }
 
+    /** Stamp a chapter complete (only if not already). Blocking. Returns true if it changed. */
+    public boolean markChapterComplete(int chapter, UUID by) {
+        try (Connection c = ds.getConnection();
+             PreparedStatement ps = c.prepareStatement(
+                     "UPDATE bv_chapter SET completed_at = CURRENT_TIMESTAMP, completed_by = ? "
+                     + "WHERE chapter = ? AND edition = ? AND completed_at IS NULL")) {
+            if (by == null) ps.setNull(1, java.sql.Types.BINARY);
+            else ps.setBytes(1, toBytes(by));
+            ps.setInt(2, chapter);
+            ps.setString(3, edition);
+            boolean changed = ps.executeUpdate() > 0;
+            if (changed) audit(by, "chapter_complete", null, "{\"chapter\":" + chapter + "}");
+            return changed;
+        } catch (SQLException e) {
+            plugin.getLogger().severe("Could not mark chapter " + chapter + " complete: " + e.getMessage());
+            return false;
+        }
+    }
+
+    /** Top contributors for a given calendar month (YYYY-MM). Blocking. */
+    public java.util.List<LeaderRow> monthlyTop(String yearMonth, int limit) {
+        java.util.List<LeaderRow> rows = new java.util.ArrayList<>();
+        try (Connection c = ds.getConnection();
+             PreparedStatement ps = c.prepareStatement(
+                     "SELECT c.uuid, c.last_name, SUM(s.points) AS pts, COUNT(*) AS blocks "
+                     + "FROM bv_submission s JOIN bv_contributor c ON c.uuid = s.uuid "
+                     + "WHERE s.edition = ? AND DATE_FORMAT(s.submitted_at, '%Y-%m') = ? "
+                     + "GROUP BY c.uuid, c.last_name ORDER BY pts DESC, blocks DESC LIMIT ?")) {
+            ps.setString(1, edition);
+            ps.setString(2, yearMonth);
+            ps.setInt(3, limit);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    rows.add(new LeaderRow(fromBytes(rs.getBytes(1)), rs.getString(2),
+                            rs.getLong(3), rs.getLong(4)));
+                }
+            }
+        } catch (SQLException e) {
+            plugin.getLogger().severe("Monthly leaderboard query failed: " + e.getMessage());
+        }
+        return rows;
+    }
+
     /** Stamp a chapter open (only if not already). Blocking. Returns true if it changed. */
     public boolean markChapterOpened(int chapter) {
         try (Connection c = ds.getConnection();

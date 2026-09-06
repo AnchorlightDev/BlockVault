@@ -100,6 +100,8 @@ public class SubmitCommand implements CommandExecutor {
                         if ("rare".equals(entry.rarity())) {
                             plugin.webhook().rareSubmission(material, player.getName(), points);
                         }
+                        plugin.displays().refresh();
+                        plugin.chapters().check();
                     }
                 }
             });

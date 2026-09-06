@@ -28,6 +28,7 @@ public final class ChapterService {
 
     private final BlockVault plugin;
     private final Set<Integer> open = Collections.synchronizedSet(new HashSet<>());
+    private final Set<Integer> completed = Collections.synchronizedSet(new HashSet<>());
     private BukkitTask task;
 
     public ChapterService(BlockVault plugin) {
@@ -68,22 +69,38 @@ public final class ChapterService {
             plugin.getServer().getScheduler().runTask(plugin, () -> {
                 long now = System.currentTimeMillis();
                 for (Database.ChapterRow row : rows) {
-                    if (row.openedAt() != null) {
-                        open.add(row.chapter());
-                        continue;
+                    int ch = row.chapter();
+                    if (row.openedAt() != null) open.add(ch);
+
+                    if (!isOpen(ch) && row.openedAt() == null) {
+                        boolean dateReached = row.opensAt() != null
+                                && now >= row.opensAt().getTime();
+                        boolean prevNearlyDone = fraction(ch - 1, collected) >= EARLY_OPEN_FRACTION;
+                        if (dateReached || prevNearlyDone) {
+                            unlock(row, prevNearlyDone && !dateReached);
+                        }
                     }
-                    if (isOpen(row.chapter())) continue;
 
-                    boolean dateReached = row.opensAt() != null
-                            && now >= row.opensAt().getTime();
-                    boolean prevNearlyDone = fraction(row.chapter() - 1, collected) >= EARLY_OPEN_FRACTION;
-
-                    if (dateReached || prevNearlyDone) {
-                        unlock(row, prevNearlyDone && !dateReached);
+                    // Completion: earlier chapters never close, but 100% is worth marking.
+                    if (fraction(ch, collected) >= 1.0 && completed.add(ch)) {
+                        onChapterComplete(row);
                     }
                 }
             });
         });
+    }
+
+    private void onChapterComplete(Database.ChapterRow row) {
+        plugin.getServer().getScheduler().runTaskAsynchronously(plugin,
+                () -> plugin.database().markChapterComplete(row.chapter(), null));
+        String line = "§a§lChapter " + row.chapter() + " — " + row.title()
+                + " §r§ais complete! Every block on that floor has been given.";
+        plugin.getServer().broadcastMessage(plugin.prefix() + line);
+        plugin.getServer().getOnlinePlayers().forEach(p ->
+                p.playSound(p.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, 1f, 1.2f));
+        plugin.webhook().chapterOpened(row.chapter(), row.title() + " (complete)");
+        plugin.displays().refresh();
+        plugin.getLogger().info("Chapter " + row.chapter() + " reached 100%.");
     }
 
     private double fraction(int chapter, Set<String> collected) {
@@ -115,6 +132,7 @@ public final class ChapterService {
                 () -> plugin.database().markChapterOpened(chapter));
 
         ceremony(row, early);
+        plugin.displays().refresh();
     }
 
     private void ceremony(Database.ChapterRow row, boolean early) {
