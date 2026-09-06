@@ -11,7 +11,6 @@ import java.util.Set;
 
 /** Two bars: the current chapter, and the whole season. */
 public class ProgressCommand implements CommandExecutor {
-
     private final BlockVault plugin;
     private final VaultUtil vaultUtil;
 
@@ -32,7 +31,7 @@ public class ProgressCommand implements CommandExecutor {
         }
 
         Set<String> collected = plugin.database().collectedSnapshot();
-        int chapter = plugin.getConfig().getInt("vault.current-chapter", 1);
+        int chapter = plugin.chapters().current();
 
         int chapTotal = 0, chapDone = 0, allTotal = 0, allDone = 0;
         for (TargetEntry e : plugin.manifest().entries().values()) {

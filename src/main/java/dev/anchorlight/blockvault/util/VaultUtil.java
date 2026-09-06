@@ -66,15 +66,18 @@ public class VaultUtil {
                 for (TargetEntry entry : plugin.manifest().entries().values()) {
                     Location loc = plugin.resolve(entry.head());
                     Block block = loc.getBlock();
-                    boolean collected = plugin.database().isCollected(entry.material());
+                    // A head is shown only when the block is collected AND its
+                    // chapter floor is open. Anything else means: no head.
+                    boolean shouldShow = plugin.database().isCollected(entry.material())
+                            && plugin.chapters().isOpen(entry.chapter());
                     boolean hasHead = block.getType() == Material.PLAYER_WALL_HEAD
                             || block.getType() == Material.PLAYER_HEAD;
 
-                    if (collected && !hasHead) {
+                    if (shouldShow && !hasHead) {
                         HeadUtil.placeHead(loc, entry.face(),
                                 parseProfile(world, profiles.get(entry.material())));
                         placed++;
-                    } else if (!collected && hasHead) {
+                    } else if (!shouldShow && hasHead) {
                         block.setType(Material.AIR, false);
                         cleared++;
                     } else {

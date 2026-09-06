@@ -39,3 +39,6 @@ permissions:
   blockvault.updatestate:
     description: Allows reconciling the world display against the database.
     default: op
+  blockvault.build:
+    description: Bypass vault build/interaction protection.
+    default: op

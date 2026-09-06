@@ -1,8 +1,12 @@
 package dev.anchorlight.blockvault;
 
+import dev.anchorlight.blockvault.chapter.ChapterService;
 import dev.anchorlight.blockvault.commands.*;
 import dev.anchorlight.blockvault.db.Database;
+import dev.anchorlight.blockvault.listener.RegionProtectionListener;
+import dev.anchorlight.blockvault.listener.PlayerGuidanceListener;
 import dev.anchorlight.blockvault.model.Manifest;
+import dev.anchorlight.blockvault.model.Region;
 import dev.anchorlight.blockvault.util.FileUtil;
 import dev.anchorlight.blockvault.util.ScheduleUtil;
 import dev.anchorlight.blockvault.util.VaultUtil;
@@ -23,6 +27,8 @@ public final class BlockVault extends JavaPlugin {
 
     private Database database;
     private Manifest manifest;
+    private ChapterService chapters;
+    private Region region;
 
     public static BlockVault get() {
         return instance;
@@ -61,21 +67,68 @@ public final class BlockVault extends JavaPlugin {
         FileUtil fileUtil = new FileUtil(this);
         VaultUtil vaultUtil = new VaultUtil(this);
 
+        this.chapters = new ChapterService(this);
+
         register("bvstart", new StartCommand(this));
         register("bvsubmit", new SubmitCommand(this));
         register("bvprogress", new ProgressCommand(this));
         register("bvleaderboard", new LeaderboardCommand(this));
         register("bvupdatestate", new UpdateStateCommand(this));
 
-        // Register events
+        getServer().getPluginManager().registerEvents(new RegionProtectionListener(this), this);
+        PlayerGuidanceListener guidance = new PlayerGuidanceListener(this);
+        getServer().getPluginManager().registerEvents(guidance, this);
+        guidance.start();
 
+        forceLoadChunks(true);
+        chapters.start();
         ScheduleUtil.scheduleVaultStateTask(this, vaultUtil, fileUtil);
     }
 
     @Override
     public void onDisable() {
+        if (chapters != null) chapters.stop();
+        forceLoadChunks(false);
         if (database != null) database.close();
         getConsoleSender().sendMessage(prefix() + "§cPlugin is now disabled.");
+    }
+
+    public ChapterService chapters() {
+        return chapters;
+    }
+
+    /**
+     * The protected volume, built lazily once the origin world is loaded.
+     * Rebuilt by {@link #invalidateRegion()} after a config reload.
+     */
+    public Region region() {
+        if (region == null) {
+            World world = originWorld();
+            if (world == null) return null;
+            int[] origin = {
+                    getConfig().getInt("origin.x"),
+                    getConfig().getInt("origin.y"),
+                    getConfig().getInt("origin.z")
+            };
+            region = new Region(world, origin, manifest.min(), manifest.max(), 4);
+        }
+        return region;
+    }
+
+    public void invalidateRegion() {
+        region = null;
+    }
+
+    private void forceLoadChunks(boolean load) {
+        Region r = region();
+        if (r == null || r.world() == null) return;
+        for (int cx = r.minChunkX(); cx <= r.maxChunkX(); cx++) {
+            for (int cz = r.minChunkZ(); cz <= r.maxChunkZ(); cz++) {
+                r.world().setChunkForceLoaded(cx, cz, load);
+            }
+        }
+        getLogger().info((load ? "Force-loaded " : "Released ")
+                + "vault chunks in " + r.world().getName() + ".");
     }
 
     public Database database() {

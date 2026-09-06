@@ -28,7 +28,6 @@ import java.util.concurrent.ConcurrentHashMap;
  * and updated only after a write commits.
  */
 public final class Database {
-
     /** MySQL error code for a duplicate primary/unique key. */
     private static final int ER_DUP_ENTRY = 1062;
 
@@ -281,6 +280,69 @@ public final class Database {
             plugin.getLogger().severe("Submission write failed for " + material
                     + " by " + name + ": " + e.getMessage());
             return SubmitOutcome.DB_ERROR;
+        }
+    }
+
+    // ----------------------------------------------------------------- chapters
+
+    public record ChapterRow(int chapter, String title, String room,
+                             Integer sealX, Integer sealY, Integer sealZ,
+                             java.sql.Timestamp opensAt, java.sql.Timestamp openedAt) {}
+
+    /** All chapter rows for this edition, ordered. Blocking. */
+    public java.util.List<ChapterRow> chapters() {
+        java.util.List<ChapterRow> rows = new java.util.ArrayList<>();
+        try (Connection c = ds.getConnection();
+             PreparedStatement ps = c.prepareStatement(
+                     "SELECT chapter,title,room,seal_x,seal_y,seal_z,opens_at,opened_at "
+                     + "FROM bv_chapter WHERE edition = ? ORDER BY chapter")) {
+            ps.setString(1, edition);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    rows.add(new ChapterRow(
+                            rs.getInt("chapter"), rs.getString("title"), rs.getString("room"),
+                            (Integer) rs.getObject("seal_x"),
+                            (Integer) rs.getObject("seal_y"),
+                            (Integer) rs.getObject("seal_z"),
+                            rs.getTimestamp("opens_at"), rs.getTimestamp("opened_at")));
+                }
+            }
+        } catch (SQLException e) {
+            plugin.getLogger().severe("Chapter query failed: " + e.getMessage());
+        }
+        return rows;
+    }
+
+    /** Stamp a chapter open (only if not already). Blocking. Returns true if it changed. */
+    public boolean markChapterOpened(int chapter) {
+        try (Connection c = ds.getConnection();
+             PreparedStatement ps = c.prepareStatement(
+                     "UPDATE bv_chapter SET opened_at = CURRENT_TIMESTAMP "
+                     + "WHERE chapter = ? AND edition = ? AND opened_at IS NULL")) {
+            ps.setInt(1, chapter);
+            ps.setString(2, edition);
+            boolean changed = ps.executeUpdate() > 0;
+            if (changed) audit(null, "chapter_open", null, "{\"chapter\":" + chapter + "}");
+            return changed;
+        } catch (SQLException e) {
+            plugin.getLogger().severe("Could not mark chapter " + chapter + " open: " + e.getMessage());
+            return false;
+        }
+    }
+
+    /** Append an audit row. Blocking; {@code detailJson} must be valid JSON or null. */
+    public void audit(UUID actor, String action, String material, String detailJson) {
+        try (Connection c = ds.getConnection();
+             PreparedStatement ps = c.prepareStatement(
+                     "INSERT INTO bv_audit (actor,action,material,detail) VALUES (?,?,?,?)")) {
+            if (actor == null) ps.setNull(1, java.sql.Types.BINARY);
+            else ps.setBytes(1, toBytes(actor));
+            ps.setString(2, action);
+            ps.setString(3, material);
+            ps.setString(4, detailJson);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            plugin.getLogger().severe("Audit write failed (" + action + "): " + e.getMessage());
         }
     }
 

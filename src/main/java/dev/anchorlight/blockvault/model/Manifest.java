@@ -22,7 +22,6 @@ import java.util.Map;
  * regenerates the target list (brief section 7).
  */
 public final class Manifest {
-
     private final String version;
     private final int dataVersion;
     private final Map<String, TargetEntry> entries;

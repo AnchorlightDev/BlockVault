@@ -20,7 +20,6 @@ import org.bukkit.inventory.ItemStack;
  * If the database is unreachable the item stays in the player's hand.
  */
 public class SubmitCommand implements CommandExecutor {
-
     private final BlockVault plugin;
     private final VaultUtil vaultUtil;
 
@@ -47,7 +46,8 @@ public class SubmitCommand implements CommandExecutor {
             plugin.tell(player, "§cSubmissions are not allowed in creative mode.");
             return true;
         }
-        if (!inRegion(player.getLocation())) {
+        var region = plugin.region();
+        if (region == null || !region.contains(player.getLocation())) {
             plugin.tell(player, "§cYou must be inside the vault to submit a block.");
             return true;
         }
@@ -121,8 +121,9 @@ public class SubmitCommand implements CommandExecutor {
     }
 
     private void placeHead(TargetEntry entry, org.bukkit.profile.PlayerProfile profile) {
-        // The head is only shown once the chapter floor is open. Chapter gating
-        // is applied in the reconciliation pass; place unconditionally for now.
+        // Submissions for a not-yet-open chapter are credited, but the head
+        // stays hidden until the floor opens (the reconcile pass adds it then).
+        if (!plugin.chapters().isOpen(entry.chapter())) return;
         Location loc = plugin.resolve(entry.head());
         if (loc.getWorld() == null) return;
         HeadUtil.placeHead(loc, entry.face(), profile);
@@ -137,20 +138,4 @@ public class SubmitCommand implements CommandExecutor {
         player.playSound(player.getLocation(), sound, 1f, 1f);
     }
 
-    private boolean inRegion(Location loc) {
-        if (loc.getWorld() == null || plugin.originWorld() == null
-                || !loc.getWorld().equals(plugin.originWorld())) {
-            return false;
-        }
-        int ox = plugin.getConfig().getInt("origin.x");
-        int oy = plugin.getConfig().getInt("origin.y");
-        int oz = plugin.getConfig().getInt("origin.z");
-        int[] lo = plugin.manifest().min();
-        int[] hi = plugin.manifest().max();
-        int margin = 3;
-        int x = loc.getBlockX() - ox, y = loc.getBlockY() - oy, z = loc.getBlockZ() - oz;
-        return x >= lo[0] - margin && x <= hi[0] + margin
-                && y >= lo[1] - margin && y <= hi[1] + margin
-                && z >= lo[2] - margin && z <= hi[2] + margin;
-    }
 }
