@@ -93,7 +93,7 @@ public final class DisplayService {
         int[] rel = plugin.manifest().leader("head");
         if (rel == null) return;
         Location at = plugin.resolve(rel).add(0.5, 2.2, 0.5);
-        if (at.getWorld() == null) return;
+        if (at.getWorld() == null || !at.isChunkLoaded()) return; // don't spawn into an unloaded chunk
 
         StringBuilder text = new StringBuilder("§6§lThe Vault\n§7")
                 .append(done).append(" / ").append(total)

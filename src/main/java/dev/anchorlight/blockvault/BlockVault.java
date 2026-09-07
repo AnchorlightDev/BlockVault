@@ -193,6 +193,8 @@ public final class BlockVault extends JavaPlugin {
 
     /** Resolve a manifest-relative coordinate to a live world location. */
     public Location resolve(int[] rel) {
+        if (rel == null) throw new IllegalArgumentException(
+                "manifest coordinate missing - check vault_slots.json (leader/seals block)");
         return new Location(originWorld(),
                 getConfig().getInt("origin.x") + rel[0],
                 getConfig().getInt("origin.y") + rel[1],

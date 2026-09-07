@@ -28,6 +28,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * and updated only after a write commits.
  */
 public final class Database {
+
     /** MySQL error code for a duplicate primary/unique key. */
     private static final int ER_DUP_ENTRY = 1062;
 
@@ -105,7 +106,7 @@ public final class Database {
     }
 
     private void seedTargets(Connection c, Manifest manifest) throws SQLException {
-        if (rowCount(c, "bv_target") > 0) return;
+        if (editionRowCount(c, "bv_target") > 0) return;
         String q = "INSERT INTO bv_target (material,edition,chapter,rarity,section,"
                 + "sign_x,sign_y,sign_z,frame_x,frame_y,frame_z,head_x,head_y,head_z,facing) "
                 + "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
@@ -129,7 +130,7 @@ public final class Database {
     }
 
     private void seedChapters(Connection c, Manifest manifest) throws SQLException {
-        if (rowCount(c, "bv_chapter") > 0) return;
+        if (editionRowCount(c, "bv_chapter") > 0) return;
         String[][] meta = {
                 {"1", "Foundations", "The Undercroft"},
                 {"2", "Green & Growing", "The Conservatory"},
@@ -212,10 +213,14 @@ public final class Database {
         }
     }
 
-    private int rowCount(Connection c, String table) throws SQLException {
-        try (Statement st = c.createStatement();
-             ResultSet rs = st.executeQuery("SELECT COUNT(*) FROM " + table)) {
-            return rs.next() ? rs.getInt(1) : 0;
+    /** Row count for the current edition. Table must have an {@code edition} column. */
+    private int editionRowCount(Connection c, String table) throws SQLException {
+        try (PreparedStatement ps = c.prepareStatement(
+                "SELECT COUNT(*) FROM " + table + " WHERE edition = ?")) {
+            ps.setString(1, edition);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? rs.getInt(1) : 0;
+            }
         }
     }
 
@@ -583,14 +588,22 @@ public final class Database {
 
     /** 1-based rank of {@code uuid} on the leaderboard, or -1 if they have no row. Blocking. */
     public int rankOf(UUID uuid) {
-        try (Connection c = ds.getConnection();
-             PreparedStatement ps = c.prepareStatement(
-                     "SELECT COUNT(*) + 1 FROM bv_contributor a "
-                     + "JOIN bv_contributor b ON b.uuid = ? "
-                     + "WHERE a.points > b.points")) {
-            ps.setBytes(1, toBytes(uuid));
-            try (ResultSet rs = ps.executeQuery()) {
-                return rs.next() ? rs.getInt(1) : -1;
+        byte[] id = toBytes(uuid);
+        try (Connection c = ds.getConnection()) {
+            try (PreparedStatement ps = c.prepareStatement(
+                    "SELECT points FROM bv_contributor WHERE uuid = ?")) {
+                ps.setBytes(1, id);
+                try (ResultSet rs = ps.executeQuery()) {
+                    if (!rs.next()) return -1; // never contributed
+                    long myPoints = rs.getLong(1);
+                    try (PreparedStatement r = c.prepareStatement(
+                            "SELECT COUNT(*) + 1 FROM bv_contributor WHERE points > ?")) {
+                        r.setLong(1, myPoints);
+                        try (ResultSet rr = r.executeQuery()) {
+                            return rr.next() ? rr.getInt(1) : -1;
+                        }
+                    }
+                }
             }
         } catch (SQLException e) {
             plugin.getLogger().severe("Rank query failed: " + e.getMessage());

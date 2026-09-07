@@ -82,7 +82,9 @@ public final class ChapterService {
                     }
 
                     // Completion: earlier chapters never close, but 100% is worth marking.
-                    if (fraction(ch, collected) >= 1.0 && completed.add(ch)) {
+                    // Requires the chapter to actually have targets - guards against a
+                    // partial manifest reporting every empty chapter as "complete".
+                    if (chapterSize(ch) > 0 && fraction(ch, collected) >= 1.0 && completed.add(ch)) {
                         onChapterComplete(row);
                     }
                 }
@@ -105,7 +107,7 @@ public final class ChapterService {
     }
 
     private double fraction(int chapter, Set<String> collected) {
-        if (chapter < 1) return 1.0;
+        if (chapter < 1) return 1.0; // "previous of chapter 1" is trivially done
         int total = 0, done = 0;
         for (TargetEntry e : plugin.manifest().entries().values()) {
             if (e.chapter() != chapter) continue;
@@ -113,6 +115,14 @@ public final class ChapterService {
             if (collected.contains(e.material())) done++;
         }
         return total == 0 ? 1.0 : (double) done / total;
+    }
+
+    private int chapterSize(int chapter) {
+        int n = 0;
+        for (TargetEntry e : plugin.manifest().entries().values()) {
+            if (e.chapter() == chapter) n++;
+        }
+        return n;
     }
 
     private void unlock(Database.ChapterRow row, boolean early) {
@@ -158,9 +168,10 @@ public final class ChapterService {
         plugin.getServer().getOnlinePlayers().forEach(bar::addPlayer);
         plugin.getServer().getScheduler().runTaskLater(plugin, bar::removeAll, 200L);
 
-        // Fireworks at the leader panel, if the world is up.
-        Location at = plugin.resolve(plugin.manifest().leader("head"));
-        if (at.getWorld() != null) {
+        // Fireworks at the leader panel, if the manifest defines it and the world is up.
+        int[] leaderHead = plugin.manifest().leader("head");
+        Location at = leaderHead == null ? null : plugin.resolve(leaderHead);
+        if (at != null && at.getWorld() != null) {
             for (int i = 0; i < 3; i++) {
                 Firework fw = at.getWorld().spawn(at.clone().add(0.5, 1, 0.5), Firework.class);
                 FireworkMeta meta = fw.getFireworkMeta();

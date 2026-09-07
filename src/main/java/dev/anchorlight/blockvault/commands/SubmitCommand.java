@@ -110,18 +110,13 @@ public class SubmitCommand implements CommandExecutor {
     }
 
     private void consumeOne(Player player, Material expected) {
-        ItemStack held = player.getInventory().getItemInMainHand();
-        if (held.getType() != expected || held.getAmount() < 1) {
-            // Player swapped items between the command and the commit. The block
-            // is already recorded; not consuming it is a harmless edge case.
-            plugin.getLogger().warning(player.getName() + " moved " + expected
-                    + " before it could be consumed; it was recorded but not removed.");
-            return;
-        }
-        if (held.getAmount() > 1) {
-            held.setAmount(held.getAmount() - 1);
-        } else {
-            player.getInventory().setItemInMainHand(null);
+        // Remove one from anywhere in the inventory, not just the main hand:
+        // the write has committed and the block must be consumed (brief 1.1),
+        // even if the player shuffled it between the command and this tick.
+        var leftover = player.getInventory().removeItem(new ItemStack(expected, 1));
+        if (!leftover.isEmpty()) {
+            plugin.getLogger().warning(player.getName() + " no longer had " + expected
+                    + " when it was consumed; recorded but not removed from inventory.");
         }
     }
 
