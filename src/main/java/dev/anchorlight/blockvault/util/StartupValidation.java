@@ -24,6 +24,7 @@ import java.util.logging.Logger;
  * that the frozen edition does not cover.
  */
 public final class StartupValidation {
+
     /** Blocks that exist in the registry but cannot be obtained in survival (brief section 9). */
     private static final Set<String> UNOBTAINABLE = Set.of(
             "air", "barrier", "bedrock", "budding_amethyst", "chain_command_block", "chorus_plant",
@@ -48,6 +49,18 @@ public final class StartupValidation {
         Set<String> target = plugin.database().targetMaterials();
 
         int problems = 0;
+
+        // Two blocks must never share a shelf cell - the second head would hide the first.
+        Map<String, String> byCell = new java.util.HashMap<>();
+        for (TargetEntry e : plugin.manifest().entries().values()) {
+            String cell = e.sign()[0] + "," + e.sign()[1] + "," + e.sign()[2];
+            String prev = byCell.putIfAbsent(cell, e.material());
+            if (prev != null) {
+                log.warning("[validation] shelf " + cell + " is used by both "
+                        + prev + " and " + e.material() + " - one will be unreachable");
+                problems++;
+            }
+        }
 
         // manifest <-> vault_items.yml
         for (var entry : manifest.entrySet()) {

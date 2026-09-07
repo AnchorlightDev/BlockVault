@@ -29,6 +29,8 @@ public final class ChapterService {
     private final BlockVault plugin;
     private final Set<Integer> open = Collections.synchronizedSet(new HashSet<>());
     private final Set<Integer> completed = Collections.synchronizedSet(new HashSet<>());
+    private final java.util.concurrent.atomic.AtomicBoolean checking =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
     private BukkitTask task;
 
     public ChapterService(BlockVault plugin) {
@@ -62,11 +64,29 @@ public final class ChapterService {
 
     /** Recompute open state and run any pending unlock ceremonies. Safe to call often. */
     public void check() {
+        // Collapse bursts (e.g. many submits in one tick) into a single pass.
+        if (!checking.compareAndSet(false, true)) return;
         plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
-            List<Database.ChapterRow> rows = plugin.database().chapters();
-            Set<String> collected = plugin.database().collectedSnapshot();
+            final List<Database.ChapterRow> rows;
+            final Set<String> collected;
+            final Set<Integer> doneInDb;
+            try {
+                rows = plugin.database().chapters();
+                collected = plugin.database().collectedSnapshot();
+                doneInDb = plugin.database().completedChapters();
+            } finally {
+                checking.set(false); // DB round-trips done; allow the next pass
+            }
 
             plugin.getServer().getScheduler().runTask(plugin, () -> {
+                // Re-attempt advancement grants for chapters already complete in the
+                // database. award() is idempotent, and this covers the case where the
+                // bundled datapack was not yet loaded when the chapter first completed.
+                for (int ch : doneInDb) {
+                    completed.add(ch);
+                    plugin.advancements().grantAll(ch);
+                }
+
                 long now = System.currentTimeMillis();
                 for (Database.ChapterRow row : rows) {
                     int ch = row.chapter();

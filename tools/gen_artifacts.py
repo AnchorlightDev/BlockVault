@@ -43,6 +43,7 @@ LINE = re.compile(
 def parse(path: Path):
     entries = []
     seen = set()
+    coords = {}
     for n, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
         line = raw.strip()
         if not line or line.startswith("```") or line.startswith("#"):
@@ -58,6 +59,12 @@ def parse(path: Path):
             raise SystemExit(f"{path}:{n}: duplicate block {block!r}")
         seen.add(block)
         sx, sy, sz = int(x), int(y), int(z)
+        key = (sx, sy, sz)
+        if key in coords:
+            raise SystemExit(
+                f"{path}:{n}: shelf {sx} {sy} {sz} already used by "
+                f"{coords[key]!r} - two blocks cannot share a slot")
+        coords[key] = block
         entries.append({
             "block": block, "chapter": int(chap), "rarity": rarity,
             "section": section,

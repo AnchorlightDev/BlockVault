@@ -5,3 +5,7 @@ dependency-reduced-pom.xml
 # Live config holds MySQL credentials - never commit a populated one.
 # The shipped template lives at src/main/resources/config.yml.
 /config.yml
+
+# Python
+__pycache__/
+*.pyc
