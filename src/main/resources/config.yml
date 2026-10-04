@@ -5,6 +5,12 @@
 # apply it before first start.
 
 # Current target-list version. Blocks are frozen per edition (see brief section 1.3).
+
+# config-version drives StoneLib's versioned config migration. Do not edit it
+# on a live server. Increment it in the bundled resource only when this file is
+# restructured, and declare the relocations for that bump.
+config-version: 1
+
 edition: '26.2'
 
 database:

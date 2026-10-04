@@ -1,5 +1,7 @@
 package dev.anchorlight.blockvault;
 
+import dev.anchorlight.StoneLib.config.ConfigUpdater;
+
 import dev.anchorlight.blockvault.advancement.AdvancementService;
 import dev.anchorlight.blockvault.chapter.ChapterService;
 import dev.anchorlight.blockvault.commands.*;
@@ -52,7 +54,8 @@ public final class BlockVault extends JavaPlugin {
     @Override
     public void onEnable() {
         instance = this;
-        saveDefaultConfig();
+        ConfigUpdater.update(this, "config.yml");
+        reloadConfig();
 
         // The target list is a required artefact - never regenerated (brief section 7).
         try {
