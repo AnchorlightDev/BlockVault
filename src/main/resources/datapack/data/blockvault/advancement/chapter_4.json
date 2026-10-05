@@ -1,0 +1,14 @@
+{
+  "parent": "blockvault:chapter_3",
+  "display": {
+    "icon": { "id": "minecraft:pink_wool" },
+    "title": { "text": "Every Colour" },
+    "description": { "text": "Complete Chapter 4 of the Vault — The Gallery" },
+    "frame": "goal",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "criteria": { "granted": { "trigger": "minecraft:impossible" } },
+  "requirements": [["granted"]]
+}
