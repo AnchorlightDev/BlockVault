@@ -81,7 +81,7 @@ public final class AdminCommand implements CommandExecutor, TabCompleter {
         int frames = 0;
         for (TargetEntry e : plugin.manifest().entries().values()) {
             Location frameLoc = plugin.resolve(e.frame());
-            if (!hasItemFrame(world, frameLoc)) {
+            if (VaultUtil.findFrame(world, frameLoc) == null) {
                 world.spawn(frameLoc, ItemFrame.class, f -> {
                     f.setFacingDirection(e.face(), true);
                     f.setFixed(true);
@@ -96,13 +96,6 @@ public final class AdminCommand implements CommandExecutor, TabCompleter {
         plugin.tell(sender, "§aRepair: respawned " + frames + " missing frames. "
                 + "Running head reconciliation…");
         new VaultUtil(plugin).updateVaultState(sender);
-    }
-
-    private boolean hasItemFrame(World world, Location loc) {
-        for (var ent : world.getNearbyEntities(loc, 0.5, 0.5, 0.5)) {
-            if (ent instanceof ItemFrame) return true;
-        }
-        return false;
     }
 
     private void backup(CommandSender sender) {

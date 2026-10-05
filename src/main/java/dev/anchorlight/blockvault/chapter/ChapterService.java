@@ -98,7 +98,10 @@ public final class ChapterService {
                     if (!isOpen(ch) && row.openedAt() == null) {
                         boolean dateReached = row.opensAt() != null
                                 && now >= row.opensAt().getTime();
-                        boolean prevNearlyDone = fraction(ch - 1, collected) >= EARLY_OPEN_FRACTION;
+                        // Blocks for a locked floor can be donated blind, so the previous
+                        // floor can hit 90% while still sealed - never skip past it.
+                        boolean prevNearlyDone = isOpen(ch - 1)
+                                && fraction(ch - 1, collected) >= EARLY_OPEN_FRACTION;
                         if (dateReached || prevNearlyDone) {
                             unlock(row, prevNearlyDone && !dateReached);
                         }

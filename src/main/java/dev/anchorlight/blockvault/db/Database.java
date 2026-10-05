@@ -546,7 +546,8 @@ public final class Database {
                 }
                 try (PreparedStatement ps = c.prepareStatement(
                         "INSERT INTO bv_audit (actor,action,material,detail) VALUES (?,?,?,?)")) {
-                    ps.setBytes(1, toBytes(actor));
+                    if (actor == null) ps.setNull(1, java.sql.Types.BINARY); // console
+                    else ps.setBytes(1, toBytes(actor));
                     ps.setString(2, "revoke");
                     ps.setString(3, material);
                     ps.setString(4, "{\"points\":" + points + "}");

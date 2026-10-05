@@ -56,6 +56,9 @@ public class FileUtil {
      * @param value The value to set.
      */
     public void updateConfigValue(String path, Object value) {
+        // Re-read first: this copy may predate edits picked up by /bvreload, and
+        // saving a stale copy would silently revert them on disk.
+        reloadConfig();
         // Set the new value
         getConfig().set(path, value);
         // Save the config to the file
