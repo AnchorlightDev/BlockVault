@@ -60,8 +60,20 @@ public final class QueryCommand implements CommandExecutor, TabCompleter {
         }
         String key = args[0].toLowerCase().replace("minecraft:", "");
         TargetEntry e = plugin.manifest().entry(key);
-        if (e == null) plugin.tell(sender, "§c'" + key + "' is not part of this collection.");
+        if (e == null) {
+            plugin.tell(sender, "§c'" + key + "' is not part of this collection.");
+            return null;
+        }
+        if (!canSee(sender, e.chapter())) {
+            plugin.tell(sender, "§7That block lives on a floor that hasn't opened yet.");
+            return null;
+        }
         return e;
+    }
+
+    /** Locked floors stay a surprise: no listing or locating their blocks until they open. */
+    private boolean canSee(CommandSender sender, int chapter) {
+        return plugin.chapters().isOpen(chapter) || sender.hasPermission("blockvault.spoilers");
     }
 
     private String pretty(TargetEntry e) {
@@ -96,6 +108,10 @@ public final class QueryCommand implements CommandExecutor, TabCompleter {
         int chapter = args.length > 0 ? parseInt(args[0], plugin.chapters().current())
                                       : plugin.chapters().current();
         int page = args.length > 1 ? Math.max(1, parseInt(args[1], 1)) : 1;
+        if (!canSee(sender, chapter)) {
+            plugin.tell(sender, "§7Chapter " + chapter + " hasn't opened yet - its blocks are a surprise.");
+            return;
+        }
 
         List<String> out = new ArrayList<>();
         for (TargetEntry e : plugin.manifest().entries().values()) {
@@ -216,7 +232,7 @@ public final class QueryCommand implements CommandExecutor, TabCompleter {
         String prefix = args[0].toLowerCase();
         List<String> out = new ArrayList<>();
         for (String m : plugin.manifest().entries().keySet()) {
-            if (m.startsWith(prefix)) out.add(m);
+            if (m.startsWith(prefix) && canSee(sender, plugin.manifest().entry(m).chapter())) out.add(m);
             if (out.size() >= 50) break;
         }
         return out;

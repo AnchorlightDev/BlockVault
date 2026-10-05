@@ -112,3 +112,6 @@ permissions:
   blockvault.build:
     description: Bypass vault build/interaction protection.
     default: op
+  blockvault.spoilers:
+    description: See blocks on floors that have not opened yet in /bvfind, /bvinfo, /bvmissing.
+    default: op

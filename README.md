@@ -51,6 +51,12 @@ HikariCP and the MySQL driver are pulled at runtime via `libraries:` in
 - **The head is the state indicator.** No separate colour-glass state block.
   `/bvupdatestate` reconciles the world against the database and only ever writes
   the manifest `head` cells — never structure — in a single summary line.
+- **Locked floors are empty.** Shelf frames and signs on a chapter that hasn't
+  opened hold nothing, so freecam or x-ray reveals nothing. On unlock (and on
+  every reconcile pass) the plugin fills each frame with its target item and
+  writes the block name + rarity on the sign. `/bvfind`, `/bvinfo`,
+  `/bvhistory` and `/bvmissing` also hide locked floors unless the sender has
+  `blockvault.spoilers` (op by default).
 - **Chapters** open on their scheduled date *or* at 90% of the previous chapter,
   whichever comes first. Earlier chapters never close. Unlock breaks one
   `iron_bars` seal and runs a broadcast/title/fireworks/BossBar ceremony.
@@ -82,3 +88,4 @@ HikariCP and the MySQL driver are pulled at runtime via `libraries:` in
 | `/bvbackup` | `blockvault.backup` | Timestamped `mysqldump` |
 
 `blockvault.build` bypasses in-region build/interaction protection.
+`blockvault.spoilers` lets query commands show blocks on locked floors.

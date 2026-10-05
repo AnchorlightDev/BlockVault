@@ -3,6 +3,7 @@ package dev.anchorlight.blockvault.chapter;
 import dev.anchorlight.blockvault.BlockVault;
 import dev.anchorlight.blockvault.db.Database;
 import dev.anchorlight.blockvault.model.TargetEntry;
+import dev.anchorlight.blockvault.util.VaultUtil;
 import org.bukkit.Color;
 import org.bukkit.FireworkEffect;
 import org.bukkit.Location;
@@ -88,9 +89,11 @@ public final class ChapterService {
                 }
 
                 long now = System.currentTimeMillis();
+                boolean learnedOpen = false;
                 for (Database.ChapterRow row : rows) {
                     int ch = row.chapter();
-                    if (row.openedAt() != null) open.add(ch);
+                    // First pass after a restart: floors already open in the DB.
+                    if (row.openedAt() != null && open.add(ch) && ch > 1) learnedOpen = true;
 
                     if (!isOpen(ch) && row.openedAt() == null) {
                         boolean dateReached = row.opensAt() != null
@@ -108,6 +111,9 @@ public final class ChapterService {
                         onChapterComplete(row);
                     }
                 }
+                // A reconcile that ran before this pass would have treated those
+                // floors as locked and emptied their shelves - refill them now.
+                if (learnedOpen) new VaultUtil(plugin).updateVaultState(null);
             });
         });
     }
@@ -164,6 +170,10 @@ public final class ChapterService {
 
         ceremony(row, early);
         plugin.displays().refresh();
+        // Fill the floor's frames and signs now (they stay empty while locked so
+        // nothing can be spotted early), and place heads for blocks donated before
+        // it opened.
+        new VaultUtil(plugin).updateVaultState(null);
     }
 
     private void ceremony(Database.ChapterRow row, boolean early) {
