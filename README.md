@@ -66,6 +66,28 @@ HikariCP and the MySQL driver are pulled at runtime via `libraries:` in
   `<world>/datapacks/blockvault/` on load and granted by the plugin when a
   chapter reaches 100%. A world reload may be needed the first time.
 
+## The six floors
+
+The season runs across six themed floors, one per chapter. Each unlocks on its
+scheduled date or when the previous chapter reaches 90%, whichever comes first;
+earlier floors never close. Completing a floor (100%) grants its advancement
+from the bundled datapack.
+
+| # | Floor | Advancement | Opens | Icon |
+|---|---|---|---|---|
+| 1 | The Undercroft | Foundations | 2026-01-01 (`/bvstart`) | Chiseled Stone Bricks |
+| 2 | The Conservatory | Green & Growing | 2026-02-15 | Oak Sapling |
+| 3 | The Deep | Into the Deep | 2026-05-15 | Deepslate Bricks |
+| 4 | The Gallery | Every Colour | 2026-08-01 | Pink Wool |
+| 5 | The Forge | The Nether | 2026-09-15 | Nether Bricks |
+| 6 | The Observatory | The End | 2026-12-01 | Purpur Block |
+
+Chapter 1 opens with `/bvstart` regardless of its date. Chapter 6's advancement
+uses the `challenge` frame; the rest use `goal`. Open dates come from the
+`chapters:` block in `config.yml` and are re-read on every start, so you can
+adjust a future floor mid-season. Floors that haven't opened are empty, and
+query commands hide them unless the sender has `blockvault.spoilers`.
+
 ## Commands
 
 | Command | Permission | Purpose |
