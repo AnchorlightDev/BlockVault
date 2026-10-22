@@ -18,45 +18,65 @@ the shelf, and six themed floors unlock over the season.
 | Package | `dev.anchorlight.blockvault` |
 
 HikariCP and the MySQL driver are pulled at runtime via `libraries:` in
-`plugin.yml` — no shading.
+`plugin.yml`. StoneLib is shaded into the jar.
 
 ## Setup
 
 1. **Apply the schema.** Run `src/main/resources/blockvault_schema.sql` against
-   your database before first start.
-2. **Generate the data artefacts** from section 12 of the implementation brief:
+   your database before first start (the plugin also applies it on boot).
+2. **Configure** `config.yml` (git-ignored — holds DB credentials): database
+   connection, the world `origin:` (any fixed point near the vault — every
+   stored position is relative to it), the chapter `opens-at` dates, and
+   optionally a `discord.webhook-url`.
+3. **Start the server.** With no layout yet, the plugin starts in *setup mode*
+   and only `/bvsetup` works.
+4. **Scan each floor in-game** (before `/bvstart`):
    ```
-   python tools/gen_artifacts.py       # reads tools/target_list.txt
+   /bvsetup pos1              stand at one corner of the floor
+   /bvsetup pos2              stand at the opposite corner
+   /bvsetup floor 1           scan + preview floating items
+   /bvsetup confirm           (or /bvsetup cancel)
+   /bvsetup seal 2            looking at floor 2's iron-bar seal (repeat 2-6)
+   /bvsetup lobby             looking at the lobby leader head (optional)
+   /bvsetup status            check every floor is done
    ```
-   This produces `src/main/resources/vault_items.yml`,
-   `src/main/resources/vault_slots.json` and `tools/spawn_frames.mcfunction`.
-   The plugin **disables itself** if `vault_slots.json` is missing — it never
-   regenerates the target list.
-3. **Paste the schematic** `sky_vault.schem` at the world origin, then run
-   `spawn_frames.mcfunction` standing on that origin to spawn the empty frames.
-4. **Configure** `config.yml` (git-ignored — holds DB credentials):
-   database connection, the world `origin:` the schematic sits at, the chapter
-   `opens-at` dates, and optionally a `discord.webhook-url`.
-5. Start the server. Bootstrap seeds `bv_target` / `bv_chapter` from the manifest
-   and runs a three-way validation pass (manifest ↔ `vault_items.yml` ↔
-   `bv_target`) plus new-block detection.
-6. `/bvstart` opens the event.
+   Wall heads in the selection are **niches**. They're ordered clockwise from
+   north around the floor's centre, top to bottom, and given blocks from
+   `floor_assignment.tsv` in list order, so each section fills a continuous run
+   of wall. Extra niches are kept as spares. Standing heads are that floor's
+   **leader pedestals**, ranked #1, #2… in the same clockwise order. The layout
+   is saved to `plugins/BlockVault/vault_slots.json` (previous copy kept as
+   `.bak`).
+5. **Restart.** Bootstrap seeds `bv_target` / `bv_chapter` from the layout
+   (re-seeded on every start until the first donation) and runs validation.
+6. `/bvstart` opens the event. The layout is frozen from then on.
+
+`floor_assignment.tsv` (tab-separated `block chapter rarity section edition`)
+is bundled in the jar; drop an edited copy in the plugin folder to override it.
+Blocks from another edition (e.g. 26.3) get niches but are **reserved**: plain
+heads, no item, not counted in the season total.
 
 ## How it works
 
+- **First donation unlocks, most donations wins the head.** The first player
+  to donate a block unlocks it and earns its rarity points. Anyone can keep
+  donating more of it afterwards (no extra points); the niche head wears the
+  skin of whoever has donated the most, ties going to whoever got there first.
 - **Submissions are transactional.** Order is always write → confirm commit →
-  consume the item. If the database is unreachable the block stays in the
-  player's hand. `bv_submission.material` is the primary key, so one-of-each is
-  enforced by the database and simultaneous submits race safely.
-- **The head is the state indicator.** No separate colour-glass state block.
-  `/bvupdatestate` reconciles the world against the database and only ever writes
-  the manifest `head` cells — never structure — in a single summary line.
-- **Locked floors are empty.** Shelf frames and signs on a chapter that hasn't
-  opened hold nothing, so freecam or x-ray reveals nothing. On unlock (and on
-  every reconcile pass) the plugin fills each frame with its target item and
-  writes the block name + rarity on the sign. `/bvfind`, `/bvinfo`,
+  consume. If the database is unreachable the items stay in the player's hand.
+  `bv_submission.material` is the primary key, so the database decides who was
+  first and simultaneous donors race safely. `/bvsubmit` gives the whole held
+  stack; `/bvsubmit <n>` gives part of it. Container items with contents are
+  refused.
+- **Niches are heads + a floating item.** On open floors a small item display
+  floats above each niche head showing its block. Locked floors show plain
+  heads and no items, so freecam or x-ray reveals nothing. `/bvfind`, `/bvinfo`,
   `/bvhistory` and `/bvmissing` also hide locked floors unless the sender has
   `blockvault.spoilers` (op by default).
+- **Floor leaders.** Each floor's standing heads show its top donors by total
+  items given to that floor's blocks, with a #rank / name / count label.
+- `/bvupdatestate` reconciles the world against the database and only ever
+  writes niche head skins and item displays — never structure.
 - **Chapters** open on their scheduled date *or* at 90% of the previous chapter,
   whichever comes first. Earlier chapters never close. Unlock breaks one
   `iron_bars` seal and runs a broadcast/title/fireworks/BossBar ceremony.
@@ -92,21 +112,22 @@ query commands hide them unless the sender has `blockvault.spoilers`.
 
 | Command | Permission | Purpose |
 |---|---|---|
-| `/bvsubmit` | `blockvault.submit` | Donate the held block (in-region, no creative) |
+| `/bvsubmit [amount]` | `blockvault.submit` | Donate the held block — whole stack by default (in-region, no creative) |
 | `/bvprogress` | `blockvault.progress` | Current-chapter bar + overall bar |
 | `/bvleaderboard [month]` | `blockvault.leaderboard` | Top 10 all-time, or this month |
 | `/bvfind <block>` | `blockvault.find` | Level, room, shelf coordinates |
 | `/bvinfo <block>` | `blockvault.info` | Rarity, points, chapter, status |
 | `/bvmissing [chapter] [page]` | `blockvault.missing` | Outstanding list, paginated |
 | `/bvcheck` | `blockvault.check` | What in your inventory the vault needs |
-| `/bvme` | `blockvault.me` | Your blocks, points, rank |
-| `/bvhistory <block>` | `blockvault.history` | Who donated it and when |
+| `/bvme` | `blockvault.me` | Blocks unlocked, items given, points, rank |
+| `/bvhistory <block>` | `blockvault.history` | Who unlocked it, and the top 5 donors |
 | `/bvedition` | `blockvault.edition` | Frozen target-list version |
 | `/bvstart [stop]` | `blockvault.start` | Open / close the event |
 | `/bvupdatestate` | `blockvault.updatestate` | Reconcile world ↔ database (console-safe) |
 | `/bvreload` | `blockvault.reload` | Reload config without restart |
-| `/bvrevoke <block>` | `blockvault.revoke` | Reverse a submission, refund points, remove head |
-| `/bvrepair` | `blockvault.repair` | Rebuild missing frames and heads from the manifest |
+| `/bvrevoke <block>` | `blockvault.revoke` | Reverse a block: clear every donation of it, refund the unlock points |
+| `/bvrepair` | `blockvault.repair` | Rebuild missing niche heads and item displays |
+| `/bvsetup …` | `blockvault.setup` | Build the layout by scanning each floor (before `/bvstart`) |
 | `/bvbackup` | `blockvault.backup` | Timestamped `mysqldump` |
 
 `blockvault.build` bypasses in-region build/interaction protection.

@@ -12,7 +12,9 @@ CREATE TABLE IF NOT EXISTS bv_contributor (
   uuid          BINARY(16)      NOT NULL,
   last_name     VARCHAR(16)     NOT NULL,
   points        INT UNSIGNED    NOT NULL DEFAULT 0,
-  blocks_given  SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+  blocks_given  SMALLINT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'blocks this player unlocked (first donations)',
+  items_given   INT UNSIGNED    NOT NULL DEFAULT 0 COMMENT 'every item donated, first or repeat',
+  profile       JSON            NULL COMMENT 'latest cached skin profile for heads',
   first_seen    DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
   last_seen     DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP
                                 ON UPDATE CURRENT_TIMESTAMP,
@@ -22,25 +24,24 @@ CREATE TABLE IF NOT EXISTS bv_contributor (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ---------------------------------------------------------------- the target list
--- One row per block the edition expects. Loaded from vault_items.yml +
--- vault_slots.json on first start, then treated as immutable for the season.
+-- One row per block the edition expects. Seeded from vault_slots.json (built
+-- by /bvsetup); re-seeded on start until the first donation, then immutable.
 CREATE TABLE IF NOT EXISTS bv_target (
   material      VARCHAR(64)     NOT NULL,
   edition       VARCHAR(16)     NOT NULL,
   chapter       TINYINT UNSIGNED NOT NULL,
   rarity        ENUM('common','uncommon','rare') NOT NULL,
   section       ENUM('building','coloured','functional','natural','redstone') NOT NULL,
-  sign_x        INT NOT NULL, sign_y  INT NOT NULL, sign_z  INT NOT NULL,
-  frame_x       INT NOT NULL, frame_y INT NOT NULL, frame_z INT NOT NULL,
   head_x        INT NOT NULL, head_y  INT NOT NULL, head_z  INT NOT NULL,
-  facing        ENUM('north','south','east','west') NOT NULL,
+  facing        VARCHAR(24)     NOT NULL,
   PRIMARY KEY (material, edition),
   KEY idx_chapter (edition, chapter)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ---------------------------------------------------------------- submissions
--- material is the primary key: the database itself enforces one-of-each.
--- Insert and catch the duplicate-key error instead of read-then-write.
+-- The FIRST donation of each block: it unlocks the block and earns the rarity
+-- points. material is the primary key, so the database decides who was first;
+-- insert and catch the duplicate-key error instead of read-then-write.
 CREATE TABLE IF NOT EXISTS bv_submission (
   material      VARCHAR(64)     NOT NULL,
   edition       VARCHAR(16)     NOT NULL,
@@ -54,6 +55,25 @@ CREATE TABLE IF NOT EXISTS bv_submission (
   CONSTRAINT fk_sub_target  FOREIGN KEY (material, edition)
       REFERENCES bv_target (material, edition),
   CONSTRAINT fk_sub_person  FOREIGN KEY (uuid)
+      REFERENCES bv_contributor (uuid)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ---------------------------------------------------------------- donation tally
+-- Every donation, first or repeat, summed per player per block. The niche head
+-- shows whoever has given the most; ties go to whoever reached it first.
+CREATE TABLE IF NOT EXISTS bv_donation (
+  material      VARCHAR(64)     NOT NULL,
+  edition       VARCHAR(16)     NOT NULL,
+  uuid          BINARY(16)      NOT NULL,
+  quantity      INT UNSIGNED    NOT NULL DEFAULT 0,
+  first_at      DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  last_at       DATETIME(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (material, edition, uuid),
+  KEY idx_top (edition, material, quantity, last_at),
+  KEY idx_uuid (uuid),
+  CONSTRAINT fk_don_target  FOREIGN KEY (material, edition)
+      REFERENCES bv_target (material, edition),
+  CONSTRAINT fk_don_person  FOREIGN KEY (uuid)
       REFERENCES bv_contributor (uuid)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 

@@ -2,6 +2,8 @@ package dev.anchorlight.blockvault.display;
 
 import dev.anchorlight.blockvault.BlockVault;
 import dev.anchorlight.blockvault.db.Database;
+import dev.anchorlight.blockvault.model.HeadSlot;
+import dev.anchorlight.blockvault.util.HeadUtil;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
@@ -16,9 +18,10 @@ import org.bukkit.scheduler.BukkitTask;
 import java.util.List;
 
 /**
- * The vanilla display layer: the lobby leader panel (head + flanking signs) and
- * a {@link TextDisplay} hologram with the standings. No third-party dependency -
- * TextDisplay is vanilla since 1.19.4.
+ * The vanilla display layer: the lobby leader panel (head + flanking signs), a
+ * {@link TextDisplay} hologram with the standings, and each floor's standing
+ * leader heads (#1, #2, ... by items given to that floor) with a name label.
+ * No third-party dependency - TextDisplay is vanilla since 1.19.4.
  */
 public final class DisplayService {
 
@@ -29,7 +32,10 @@ public final class DisplayService {
     public DisplayService(BlockVault plugin) {
         this.plugin = plugin;
         this.tagKey = new org.bukkit.NamespacedKey(plugin, "hologram");
+        this.floorKey = new org.bukkit.NamespacedKey(plugin, "floor_leader");
     }
+
+    private final org.bukkit.NamespacedKey floorKey;
 
     public void start() {
         this.task = plugin.getServer().getScheduler().runTaskTimer(
@@ -47,9 +53,16 @@ public final class DisplayService {
             List<Database.LeaderRow> top = plugin.database().topContributors(5);
             int done = plugin.database().collectedCount();
             int total = plugin.manifest().entries().size();
+            java.util.Map<Integer, List<Database.TopDonor>> floors = new java.util.HashMap<>();
+            for (var e : plugin.manifest().floorLeaders().entrySet()) {
+                if (e.getValue().isEmpty()) continue;
+                List<Database.TopDonor> rows = plugin.database().floorLeaders(e.getKey(), e.getValue().size());
+                if (rows != null) floors.put(e.getKey(), rows); // null = DB error: leave heads as they are
+            }
             plugin.getServer().getScheduler().runTask(plugin, () -> {
                 updateLeaderPanel(top.isEmpty() ? null : top.get(0));
                 updateHologram(top, done, total);
+                floors.forEach(this::updateFloorLeaders);
             });
         });
     }
@@ -114,6 +127,60 @@ public final class DisplayService {
             });
         }
         display.setText(text.toString());
+    }
+
+    /**
+     * Standing heads on a floor, in rank order. Locked floors keep plain heads
+     * and no labels; open floors show #1..#n by items given to that floor.
+     */
+    private void updateFloorLeaders(int chapter, List<Database.TopDonor> rows) {
+        boolean open = plugin.chapters().isOpen(chapter);
+        List<HeadSlot> slots = plugin.manifest().floorLeaders(chapter);
+        for (int i = 0; i < slots.size(); i++) {
+            HeadSlot slot = slots.get(i);
+            Location loc = plugin.resolve(slot.head());
+            if (loc.getWorld() == null || !loc.isChunkLoaded()) continue;
+            Database.TopDonor who = open && i < rows.size() ? rows.get(i) : null;
+
+            PlayerProfile profile = null;
+            if (who != null) {
+                profile = HeadUtil.fromJson(plugin.getServer(), who.profileJson());
+                if (profile == null) profile = Bukkit.createPlayerProfile(who.uuid(), who.name());
+            }
+            HeadUtil.applyHead(loc, slot.wall(), slot.face(), profile);
+
+            Location labelAt = loc.clone().add(0.5, 0.9, 0.5);
+            String tag = chapter + ":" + i;
+            TextDisplay label = findTagged(labelAt, floorKey, tag);
+            if (!open) {
+                if (label != null) label.remove();
+                continue;
+            }
+            String text = "§6#" + (i + 1) + "\n" + (who == null
+                    ? "§7—"
+                    : "§f" + who.name() + "\n§7" + who.quantity() + " given");
+            if (label == null) {
+                label = labelAt.getWorld().spawn(labelAt, TextDisplay.class, d -> {
+                    d.getPersistentDataContainer().set(floorKey, PersistentDataType.STRING, tag);
+                    d.setBillboard(Display.Billboard.CENTER);
+                    d.setDefaultBackground(false);
+                    d.setTransformation(new org.bukkit.util.Transformation(
+                            new org.joml.Vector3f(), new org.joml.AxisAngle4f(),
+                            new org.joml.Vector3f(0.6f, 0.6f, 0.6f), new org.joml.AxisAngle4f()));
+                });
+            }
+            if (!text.equals(label.getText())) label.setText(text);
+        }
+    }
+
+    private TextDisplay findTagged(Location near, org.bukkit.NamespacedKey key, String tag) {
+        for (var e : near.getWorld().getNearbyEntities(near, 0.5, 0.5, 0.5)) {
+            if (e instanceof TextDisplay td
+                    && tag.equals(td.getPersistentDataContainer().get(key, PersistentDataType.STRING))) {
+                return td;
+            }
+        }
+        return null;
     }
 
     private TextDisplay findHologram(Location near) {

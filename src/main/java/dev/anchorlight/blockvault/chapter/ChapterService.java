@@ -115,7 +115,7 @@ public final class ChapterService {
                     }
                 }
                 // A reconcile that ran before this pass would have treated those
-                // floors as locked and emptied their shelves - refill them now.
+                // floors as locked and hidden their items - restore them now.
                 if (learnedOpen) new VaultUtil(plugin).updateVaultState(null);
             });
         });
@@ -173,9 +173,8 @@ public final class ChapterService {
 
         ceremony(row, early);
         plugin.displays().refresh();
-        // Fill the floor's frames and signs now (they stay empty while locked so
-        // nothing can be spotted early), and place heads for blocks donated before
-        // it opened.
+        // Spawn the floor's floating items now (none while locked, so nothing can
+        // be spotted early) and give niche heads to blocks donated before it opened.
         new VaultUtil(plugin).updateVaultState(null);
     }
 

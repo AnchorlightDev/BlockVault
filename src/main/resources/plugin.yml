@@ -7,8 +7,8 @@ libraries:
   - com.mysql:mysql-connector-j:8.4.0
 commands:
   bvsubmit:
-    description: Submit the block you are holding to the vault.
-    usage: /bvsubmit
+    description: Donate the block you are holding (whole stack, or an amount).
+    usage: /bvsubmit [amount]
   bvleaderboard:
     description: Show the top contributors (add 'month' for this month only).
     usage: /bvleaderboard [month]
@@ -56,6 +56,10 @@ commands:
     description: Rebuild missing frames and heads from the manifest.
     usage: /bvrepair
     permission: blockvault.repair
+  bvsetup:
+    description: Build the vault layout by scanning each floor's heads.
+    usage: /bvsetup <pos1|pos2|floor|confirm|cancel|seal|lobby|status>
+    permission: blockvault.setup
   bvbackup:
     description: Write a timestamped database dump.
     usage: /bvbackup
@@ -108,6 +112,9 @@ permissions:
     default: op
   blockvault.backup:
     description: Allows writing database dumps.
+    default: op
+  blockvault.setup:
+    description: Allows building the vault layout with /bvsetup (before /bvstart).
     default: op
   blockvault.build:
     description: Bypass vault build/interaction protection.

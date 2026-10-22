@@ -37,7 +37,23 @@ public final class Database {
     private final HikariDataSource ds;
     private final Set<String> collected = Collections.newSetFromMap(new ConcurrentHashMap<>());
 
-    public enum SubmitOutcome { OK, ALREADY_TAKEN, DB_ERROR }
+    public enum SubmitOutcome { OK, DB_ERROR }
+
+    /** Whoever has donated the most of one block. */
+    public record TopDonor(UUID uuid, String name, long quantity, String profileJson) {}
+
+    /**
+     * Result of a donation.
+     *
+     * @param first        true if this donation unlocked the block
+     * @param points       points awarded (rarity points on a first donation, else 0)
+     * @param myQuantity   the donor's running total for this block
+     * @param top          the block's top donor after this donation
+     */
+    public record SubmitResult(SubmitOutcome outcome, boolean first, int points,
+                               long myQuantity, TopDonor top) {
+        static SubmitResult error() { return new SubmitResult(SubmitOutcome.DB_ERROR, false, 0, 0, null); }
+    }
 
     public Database(BlockVault plugin) {
         this.plugin = plugin;
@@ -106,10 +122,17 @@ public final class Database {
     }
 
     private void seedTargets(Connection c, Manifest manifest) throws SQLException {
-        if (editionRowCount(c, "bv_target") > 0) return;
+        if (editionRowCount(c, "bv_target") > 0) {
+            // Until the first donation the layout may still change (/bvsetup), so
+            // re-seed from the current manifest. After that it is frozen.
+            if (editionRowCount(c, "bv_submission") > 0 || editionRowCount(c, "bv_donation") > 0) return;
+            try (PreparedStatement del = c.prepareStatement("DELETE FROM bv_target WHERE edition = ?")) {
+                del.setString(1, edition);
+                del.executeUpdate();
+            }
+        }
         String q = "INSERT INTO bv_target (material,edition,chapter,rarity,section,"
-                + "sign_x,sign_y,sign_z,frame_x,frame_y,frame_z,head_x,head_y,head_z,facing) "
-                + "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
+                + "head_x,head_y,head_z,facing) VALUES (?,?,?,?,?,?,?,?,?)";
         try (PreparedStatement ps = c.prepareStatement(q)) {
             for (TargetEntry e : manifest.entries().values()) {
                 ps.setString(1, e.material());
@@ -117,10 +140,8 @@ public final class Database {
                 ps.setInt(3, e.chapter());
                 ps.setString(4, e.rarity());
                 ps.setString(5, e.section());
-                ps.setInt(6, e.sign()[0]);  ps.setInt(7, e.sign()[1]);  ps.setInt(8, e.sign()[2]);
-                ps.setInt(9, e.frame()[0]); ps.setInt(10, e.frame()[1]); ps.setInt(11, e.frame()[2]);
-                ps.setInt(12, e.head()[0]); ps.setInt(13, e.head()[1]); ps.setInt(14, e.head()[2]);
-                ps.setString(15, e.facing());
+                ps.setInt(6, e.head()[0]); ps.setInt(7, e.head()[1]); ps.setInt(8, e.head()[2]);
+                ps.setString(9, e.facing());
                 ps.addBatch();
             }
             ps.executeBatch();
@@ -130,7 +151,23 @@ public final class Database {
     }
 
     private void seedChapters(Connection c, Manifest manifest) throws SQLException {
-        if (editionRowCount(c, "bv_chapter") > 0) return;
+        if (editionRowCount(c, "bv_chapter") > 0) {
+            // Seals can be (re)recorded with /bvsetup seal until the floor opens.
+            try (PreparedStatement ps = c.prepareStatement(
+                    "UPDATE bv_chapter SET seal_x = ?, seal_y = ?, seal_z = ? "
+                    + "WHERE chapter = ? AND edition = ? AND opened_at IS NULL")) {
+                for (int ch = 2; ch <= 6; ch++) {
+                    int[] seal = manifest.seal(ch);
+                    if (seal == null) continue;
+                    ps.setInt(1, seal[0]); ps.setInt(2, seal[1]); ps.setInt(3, seal[2]);
+                    ps.setInt(4, ch);
+                    ps.setString(5, edition);
+                    ps.addBatch();
+                }
+                ps.executeBatch();
+            }
+            return;
+        }
         String[][] meta = {
                 {"1", "Foundations", "The Undercroft"},
                 {"2", "Green & Growing", "The Conservatory"},
@@ -255,18 +292,96 @@ public final class Database {
         return out;
     }
 
-    /** material -> cached profile JSON (may be null) for this edition. Blocking. */
-    public java.util.Map<String, String> allProfiles() {
-        java.util.Map<String, String> out = new java.util.HashMap<>();
+    /** Ranking used for every "most donated" question: quantity, then who got there first. */
+    private static final String TOP_ORDER = "d.quantity DESC, d.last_at ASC";
+
+    /**
+     * material -> its top donor, for every donated block in this edition.
+     * Returns null (not an empty map) if the query failed, so callers can tell
+     * "nobody yet" from "database down" and leave heads alone. Blocking.
+     */
+    public java.util.Map<String, TopDonor> topDonors() {
+        java.util.Map<String, TopDonor> out = new java.util.HashMap<>();
         try (Connection c = ds.getConnection();
              PreparedStatement ps = c.prepareStatement(
-                     "SELECT material, profile FROM bv_submission WHERE edition = ?")) {
+                     "SELECT material, uuid, last_name, quantity, profile FROM ("
+                     + " SELECT d.material, d.uuid, p.last_name, d.quantity, p.profile,"
+                     + "  ROW_NUMBER() OVER (PARTITION BY d.material ORDER BY " + TOP_ORDER + ") AS rn"
+                     + " FROM bv_donation d JOIN bv_contributor p ON p.uuid = d.uuid"
+                     + " WHERE d.edition = ? AND d.quantity > 0) ranked WHERE rn = 1")) {
             ps.setString(1, edition);
             try (ResultSet rs = ps.executeQuery()) {
-                while (rs.next()) out.put(rs.getString(1), rs.getString(2));
+                while (rs.next()) {
+                    out.put(rs.getString(1), new TopDonor(fromBytes(rs.getBytes(2)),
+                            rs.getString(3), rs.getLong(4), rs.getString(5)));
+                }
             }
         } catch (SQLException e) {
-            plugin.getLogger().severe("Could not load cached profiles: " + e.getMessage());
+            plugin.getLogger().severe("Could not load top donors: " + e.getMessage());
+            return null;
+        }
+        return out;
+    }
+
+    /** The top {@code limit} donors of one block. Blocking. */
+    public java.util.List<TopDonor> topDonorsOf(String material, int limit) {
+        java.util.List<TopDonor> out = new java.util.ArrayList<>();
+        try (Connection c = ds.getConnection()) {
+            topDonorsOf(c, material, limit, out);
+        } catch (SQLException e) {
+            plugin.getLogger().severe("Donor lookup failed: " + e.getMessage());
+        }
+        return out;
+    }
+
+    private void topDonorsOf(Connection c, String material, int limit,
+                             java.util.List<TopDonor> out) throws SQLException {
+        try (PreparedStatement ps = c.prepareStatement(
+                "SELECT d.uuid, p.last_name, d.quantity, p.profile "
+                + "FROM bv_donation d JOIN bv_contributor p ON p.uuid = d.uuid "
+                + "WHERE d.material = ? AND d.edition = ? AND d.quantity > 0 "
+                + "ORDER BY " + TOP_ORDER + " LIMIT ?")) {
+            ps.setString(1, material);
+            ps.setString(2, edition);
+            ps.setInt(3, limit);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    out.add(new TopDonor(fromBytes(rs.getBytes(1)), rs.getString(2),
+                            rs.getLong(3), rs.getString(4)));
+                }
+            }
+        }
+    }
+
+    /**
+     * The top {@code limit} donors on one floor, by total items given to that
+     * floor's blocks. Feeds the standing leader heads. Null on failure. Blocking.
+     */
+    public java.util.List<TopDonor> floorLeaders(int chapter, int limit) {
+        java.util.List<TopDonor> out = new java.util.ArrayList<>();
+        try (Connection c = ds.getConnection();
+             PreparedStatement ps = c.prepareStatement(
+                     "SELECT d.uuid, p.last_name, SUM(d.quantity) AS items, "
+                     + "(SELECT x.profile FROM bv_contributor x WHERE x.uuid = d.uuid) AS profile, "
+                     + "MAX(d.last_at) AS latest "
+                     + "FROM bv_donation d "
+                     + "JOIN bv_target t ON t.material = d.material AND t.edition = d.edition "
+                     + "JOIN bv_contributor p ON p.uuid = d.uuid "
+                     + "WHERE d.edition = ? AND t.chapter = ? AND d.quantity > 0 "
+                     + "GROUP BY d.uuid, p.last_name "
+                     + "ORDER BY items DESC, latest ASC LIMIT ?")) {
+            ps.setString(1, edition);
+            ps.setInt(2, chapter);
+            ps.setInt(3, limit);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    out.add(new TopDonor(fromBytes(rs.getBytes(1)), rs.getString(2),
+                            rs.getLong(3), rs.getString(4)));
+                }
+            }
+        } catch (SQLException e) {
+            plugin.getLogger().severe("Floor leader query failed: " + e.getMessage());
+            return null;
         }
         return out;
     }
@@ -274,74 +389,112 @@ public final class Database {
     // ----------------------------------------------------------------- writes
 
     /**
-     * Record a submission. Blocking - call on the async scheduler.
-     * The item must NOT be consumed until this returns {@link SubmitOutcome#OK}.
+     * Record a donation of {@code quantity} items. Blocking - call on the async
+     * scheduler. The items must NOT be consumed until this returns
+     * {@link SubmitOutcome#OK}.
+     *
+     * <p>The first donation of a block inserts its bv_submission row (the
+     * primary key decides who was first, so simultaneous donors race safely) and
+     * earns {@code firstPoints}. Every donation, first or repeat, adds to the
+     * donor's bv_donation tally, which decides who wears the niche head.
      *
      * @param profileJson cached skin profile, or null
      */
-    public SubmitOutcome submit(String material, UUID uuid, String name,
-                                int points, String profileJson) {
+    public SubmitResult submit(String material, UUID uuid, String name, int quantity,
+                               int firstPoints, String profileJson) {
         byte[] id = toBytes(uuid);
         try (Connection c = ds.getConnection()) {
             c.setAutoCommit(false);
             try {
                 try (PreparedStatement ps = c.prepareStatement(
-                        "INSERT INTO bv_contributor (uuid,last_name) VALUES (?,?) "
+                        "INSERT INTO bv_contributor (uuid,last_name,profile) VALUES (?,?,?) "
                         + "ON DUPLICATE KEY UPDATE last_name=VALUES(last_name), "
-                        + "last_seen=CURRENT_TIMESTAMP")) {
+                        + "profile=COALESCE(VALUES(profile), profile), last_seen=CURRENT_TIMESTAMP")) {
                     ps.setBytes(1, id);
                     ps.setString(2, name);
+                    if (profileJson == null) ps.setNull(3, java.sql.Types.VARCHAR);
+                    else ps.setString(3, profileJson);
                     ps.executeUpdate();
                 }
 
+                boolean first = true;
                 try (PreparedStatement ps = c.prepareStatement(
                         "INSERT INTO bv_submission (material,edition,uuid,points,profile) "
                         + "VALUES (?,?,?,?,?)")) {
                     ps.setString(1, material);
                     ps.setString(2, edition);
                     ps.setBytes(3, id);
-                    ps.setInt(4, points);
+                    ps.setInt(4, firstPoints);
                     if (profileJson == null) ps.setNull(5, java.sql.Types.VARCHAR);
                     else ps.setString(5, profileJson);
                     ps.executeUpdate();
                 } catch (SQLException dup) {
-                    if (dup.getErrorCode() == ER_DUP_ENTRY) {
-                        c.rollback();
-                        collected.add(material); // reconcile the memory cache
-                        return SubmitOutcome.ALREADY_TAKEN;
-                    }
-                    throw dup;
+                    // Already unlocked by someone: a failed statement does not end
+                    // the InnoDB transaction, so carry on as a repeat donation.
+                    if (dup.getErrorCode() != ER_DUP_ENTRY) throw dup;
+                    first = false;
+                }
+                int points = first ? firstPoints : 0;
+
+                try (PreparedStatement ps = c.prepareStatement(
+                        "INSERT INTO bv_donation (material,edition,uuid,quantity,last_at) "
+                        + "VALUES (?,?,?,?,CURRENT_TIMESTAMP(3)) "
+                        + "ON DUPLICATE KEY UPDATE quantity = quantity + VALUES(quantity), "
+                        + "last_at = CURRENT_TIMESTAMP(3)")) {
+                    ps.setString(1, material);
+                    ps.setString(2, edition);
+                    ps.setBytes(3, id);
+                    ps.setInt(4, quantity);
+                    ps.executeUpdate();
                 }
 
                 try (PreparedStatement ps = c.prepareStatement(
                         "UPDATE bv_contributor SET points = points + ?, "
-                        + "blocks_given = blocks_given + 1 WHERE uuid = ?")) {
+                        + "blocks_given = blocks_given + ?, items_given = items_given + ? "
+                        + "WHERE uuid = ?")) {
                     ps.setInt(1, points);
-                    ps.setBytes(2, id);
+                    ps.setInt(2, first ? 1 : 0);
+                    ps.setInt(3, quantity);
+                    ps.setBytes(4, id);
                     ps.executeUpdate();
                 }
 
                 try (PreparedStatement ps = c.prepareStatement(
                         "INSERT INTO bv_audit (actor,action,material,detail) "
-                        + "VALUES (?,?,?,JSON_OBJECT('points',?))")) {
+                        + "VALUES (?,?,?,JSON_OBJECT('points',?,'quantity',?))")) {
                     ps.setBytes(1, id);
-                    ps.setString(2, "submit");
+                    ps.setString(2, first ? "submit" : "donate");
                     ps.setString(3, material);
                     ps.setInt(4, points);
+                    ps.setInt(5, quantity);
                     ps.executeUpdate();
                 }
 
+                long mine = 0;
+                try (PreparedStatement ps = c.prepareStatement(
+                        "SELECT quantity FROM bv_donation WHERE material = ? AND edition = ? AND uuid = ?")) {
+                    ps.setString(1, material);
+                    ps.setString(2, edition);
+                    ps.setBytes(3, id);
+                    try (ResultSet rs = ps.executeQuery()) {
+                        if (rs.next()) mine = rs.getLong(1);
+                    }
+                }
+                java.util.List<TopDonor> top = new java.util.ArrayList<>(1);
+                topDonorsOf(c, material, 1, top);
+
                 c.commit();
                 collected.add(material);
-                return SubmitOutcome.OK;
+                return new SubmitResult(SubmitOutcome.OK, first, points, mine,
+                        top.isEmpty() ? null : top.get(0));
             } catch (SQLException e) {
                 c.rollback();
                 throw e;
             }
         } catch (SQLException e) {
-            plugin.getLogger().severe("Submission write failed for " + material
+            plugin.getLogger().severe("Donation write failed for " + material
                     + " by " + name + ": " + e.getMessage());
-            return SubmitOutcome.DB_ERROR;
+            return SubmitResult.error();
         }
     }
 
@@ -492,29 +645,33 @@ public final class Database {
         }
     }
 
-    public record MyStats(long points, long blocks, int rank) {}
+    public record MyStats(long points, long blocks, long items, int rank) {}
 
     /** Personal totals for {@code uuid}. Blocking. */
     public MyStats myStats(UUID uuid) {
-        long points = 0, blocks = 0;
+        long points = 0, blocks = 0, items = 0;
         try (Connection c = ds.getConnection();
              PreparedStatement ps = c.prepareStatement(
-                     "SELECT points, blocks_given FROM bv_contributor WHERE uuid = ?")) {
+                     "SELECT points, blocks_given, items_given FROM bv_contributor WHERE uuid = ?")) {
             ps.setBytes(1, toBytes(uuid));
             try (ResultSet rs = ps.executeQuery()) {
-                if (rs.next()) { points = rs.getLong(1); blocks = rs.getLong(2); }
+                if (rs.next()) { points = rs.getLong(1); blocks = rs.getLong(2); items = rs.getLong(3); }
             }
         } catch (SQLException e) {
             plugin.getLogger().severe("Stats query failed: " + e.getMessage());
         }
-        return new MyStats(points, blocks, rankOf(uuid));
+        return new MyStats(points, blocks, items, rankOf(uuid));
     }
 
     // ----------------------------------------------------------------- admin
 
     public record RevokeResult(boolean ok, UUID donor, int pointsRefunded) {}
 
-    /** Reverse a submission: delete it, refund the donor, audit. Blocking. */
+    /**
+     * Reverse a block entirely: delete its unlock and every donation tally,
+     * refund the first donor's points and take the items back off every
+     * donor's total, audit. Blocking.
+     */
     public RevokeResult revoke(String material, UUID actor) {
         try (Connection c = ds.getConnection()) {
             c.setAutoCommit(false);
@@ -532,14 +689,28 @@ public final class Database {
                     }
                 }
                 try (PreparedStatement ps = c.prepareStatement(
+                        "UPDATE bv_contributor p JOIN bv_donation d ON d.uuid = p.uuid "
+                        + "SET p.items_given = GREATEST(0, CAST(p.items_given AS SIGNED) - d.quantity) "
+                        + "WHERE d.material = ? AND d.edition = ?")) {
+                    ps.setString(1, material);
+                    ps.setString(2, edition);
+                    ps.executeUpdate();
+                }
+                try (PreparedStatement ps = c.prepareStatement(
+                        "DELETE FROM bv_donation WHERE material = ? AND edition = ?")) {
+                    ps.setString(1, material);
+                    ps.setString(2, edition);
+                    ps.executeUpdate();
+                }
+                try (PreparedStatement ps = c.prepareStatement(
                         "DELETE FROM bv_submission WHERE material = ? AND edition = ?")) {
                     ps.setString(1, material);
                     ps.setString(2, edition);
                     ps.executeUpdate();
                 }
                 try (PreparedStatement ps = c.prepareStatement(
-                        "UPDATE bv_contributor SET points = GREATEST(0, points - ?), "
-                        + "blocks_given = GREATEST(0, blocks_given - 1) WHERE uuid = ?")) {
+                        "UPDATE bv_contributor SET points = GREATEST(0, CAST(points AS SIGNED) - ?), "
+                        + "blocks_given = GREATEST(0, CAST(blocks_given AS SIGNED) - 1) WHERE uuid = ?")) {
                     ps.setInt(1, points);
                     ps.setBytes(2, toBytes(donor));
                     ps.executeUpdate();

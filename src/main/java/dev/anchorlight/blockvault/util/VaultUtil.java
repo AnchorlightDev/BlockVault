@@ -1,27 +1,48 @@
 package dev.anchorlight.blockvault.util;
 
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
 import dev.anchorlight.blockvault.BlockVault;
+import dev.anchorlight.blockvault.db.Database;
+import dev.anchorlight.blockvault.model.HeadSlot;
 import dev.anchorlight.blockvault.model.TargetEntry;
 import org.bukkit.Location;
 import org.bukkit.Material;
+import org.bukkit.NamespacedKey;
 import org.bukkit.World;
-import org.bukkit.block.Block;
-import org.bukkit.block.Sign;
+import org.bukkit.block.BlockFace;
 import org.bukkit.command.CommandSender;
-import org.bukkit.entity.ItemFrame;
+import org.bukkit.entity.Display;
+import org.bukkit.entity.Entity;
+import org.bukkit.entity.ItemDisplay;
 import org.bukkit.inventory.ItemStack;
-import org.bukkit.profile.PlayerProfile;
+import org.bukkit.persistence.PersistentDataType;
+import org.bukkit.util.Transformation;
+import org.joml.AxisAngle4f;
+import org.joml.Vector3f;
 
 import java.util.Map;
 
+/**
+ * The niche display layer. Each niche is a built wall head:
+ * <ul>
+ *   <li>the head wears the skin of whoever has donated the most of that block
+ *       (a plain head until someone donates, and while the floor is locked);</li>
+ *   <li>a small floating {@link ItemDisplay} above it shows the block, only on
+ *       open floors - locked floors show nothing, so freecam reveals nothing.</li>
+ * </ul>
+ */
 public class VaultUtil {
 
     private final BlockVault plugin;
+    private final NamespacedKey nicheKey;
 
     public VaultUtil(BlockVault plugin) {
         this.plugin = plugin;
+        this.nicheKey = nicheKey(plugin);
+    }
+
+    /** PDC tag on every niche item display; value = the block it shows. */
+    public static NamespacedKey nicheKey(BlockVault plugin) {
+        return new NamespacedKey(plugin, "niche");
     }
 
     public boolean hasStarted() {
@@ -45,12 +66,8 @@ public class VaultUtil {
 
     /**
      * Reconcile the world display against the database. Non-destructive: only
-     * the manifest {@code head} cells, the shelf frame's item and the shelf
-     * sign's text are ever written, never structure.
-     * Emits exactly one summary line (brief section 7, acceptance criterion 1).
-     *
-     * <p>Shelves on a locked floor are kept empty - blank sign, empty frame - so
-     * freecam or x-ray shows nothing until the chapter opens.
+     * niche head skins and the niche item displays are ever written, never
+     * structure. Emits exactly one summary line.
      *
      * @param sender optional command sender to echo the summary to
      */
@@ -64,128 +81,112 @@ public class VaultUtil {
             return;
         }
 
-        // Database read off the main thread; block edits applied back on it.
+        // Database read off the main thread; world edits applied back on it.
         plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
-            Map<String, String> profiles = plugin.database().allProfiles();
+            Map<String, Database.TopDonor> top = plugin.database().topDonors();
 
             plugin.getServer().getScheduler().runTask(plugin, () -> {
-                int placed = 0, cleared = 0, ok = 0, shelves = 0;
+                if (top == null) {
+                    String msg = "BlockVault reconcile skipped: database unavailable.";
+                    plugin.getLogger().warning(msg);
+                    if (sender != null) plugin.tell(sender, "§c" + msg);
+                    return;
+                }
+                int heads = 0, items = 0;
                 for (TargetEntry entry : plugin.manifest().entries().values()) {
-                    if (applyShelf(world, entry, plugin.chapters().isOpen(entry.chapter()))) shelves++;
-
-                    Location loc = plugin.resolve(entry.head());
-                    Block block = loc.getBlock();
-                    // A head is shown only when the block is collected AND its
-                    // chapter floor is open. Anything else means: no head.
-                    boolean shouldShow = plugin.database().isCollected(entry.material())
-                            && plugin.chapters().isOpen(entry.chapter());
-                    boolean hasHead = block.getType() == Material.PLAYER_WALL_HEAD
-                            || block.getType() == Material.PLAYER_HEAD;
-
-                    if (shouldShow && !hasHead) {
-                        HeadUtil.placeHead(loc, entry.face(),
-                                parseProfile(world, profiles.get(entry.material())));
-                        placed++;
-                    } else if (!shouldShow && hasHead) {
-                        block.setType(Material.AIR, false);
-                        cleared++;
-                    } else {
-                        ok++;
-                    }
+                    boolean open = plugin.chapters().isOpen(entry.chapter());
+                    if (applyNiche(entry, open ? top.get(entry.material()) : null)) heads++;
+                    if (applyItem(world, entry, open)) items++;
+                }
+                // Reserved (other-edition) and spare niches: plain heads, no item.
+                for (TargetEntry entry : plugin.manifest().reserved()) {
+                    if (HeadUtil.applyHead(plugin.resolve(entry.head()), true, entry.face(), null)) heads++;
+                }
+                for (HeadSlot spare : plugin.manifest().spares()) {
+                    if (HeadUtil.applyHead(plugin.resolve(spare.head()), spare.wall(), spare.face(), null)) heads++;
                 }
                 String summary = String.format(
-                        "BlockVault reconcile: %d in place, %d heads added, %d removed, %d shelves updated (%d targets).",
-                        ok, placed, cleared, shelves, plugin.manifest().entries().size());
+                        "BlockVault reconcile: %d heads updated, %d item displays updated (%d targets).",
+                        heads, items, plugin.manifest().entries().size());
                 plugin.getLogger().info(summary);
                 if (sender != null) plugin.tell(sender, "§a" + summary);
             });
         });
     }
 
+    /** Put {@code donor}'s skin (or a plain head) on one niche. Main thread. */
+    public boolean applyNiche(TargetEntry entry, Database.TopDonor donor) {
+        Location loc = plugin.resolve(entry.head());
+        if (loc.getWorld() == null) return false;
+        org.bukkit.profile.PlayerProfile profile = donor == null ? null
+                : HeadUtil.fromJson(plugin.getServer(), donor.profileJson());
+        if (donor != null && profile == null) {
+            profile = plugin.getServer().createPlayerProfile(donor.uuid(), donor.name());
+        }
+        return HeadUtil.applyHead(loc, true, entry.face(), profile);
+    }
+
     /**
-     * Fill (open floor) or empty (locked floor) one shelf's frame and sign.
-     * Missing frames or signs are skipped - /bvrepair rebuilds frames, and signs
-     * are schematic structure. Returns true if anything changed.
+     * Spawn (open floor) or remove (locked floor) the floating item above one
+     * niche. Returns true if anything changed. Main thread.
      */
-    public boolean applyShelf(World world, TargetEntry entry, boolean open) {
+    public boolean applyItem(World world, TargetEntry entry, boolean open) {
         Material type = Material.matchMaterial(entry.material());
         if (type != null && !type.isItem()) type = null;
-        boolean changed = false;
+        Location at = itemLocation(entry.head(), true, entry.face());
+        ItemDisplay existing = findItem(world, at, entry.material());
 
-        ItemFrame frame = findFrame(world, plugin.resolve(entry.frame()));
-        if (frame != null) {
-            Material want = open && type != null ? type : Material.AIR;
-            ItemStack have = frame.getItem();
-            Material haveType = have == null ? Material.AIR : have.getType();
-            if (haveType != want) {
-                frame.setItem(want == Material.AIR ? null : new ItemStack(want), false);
-                changed = true;
-            }
+        if (!open || type == null) {
+            if (existing == null) return false;
+            existing.remove();
+            return true;
         }
-
-        Location signLoc = plugin.resolve(entry.sign());
-        if (signLoc.getBlock().getState() instanceof Sign sign) {
-            String[] want = open ? signLines(entry, type) : new String[]{"", "", "", ""};
-            boolean differs = false;
-            for (int i = 0; i < 4; i++) {
-                if (!want[i].equals(sign.getLine(i))) {
-                    sign.setLine(i, want[i]);
-                    differs = true;
-                }
-            }
-            if (differs) {
-                sign.update(true, false);
-                changed = true;
-            }
+        if (existing != null) {
+            if (existing.getItemStack() != null && existing.getItemStack().getType() == type) return false;
+            existing.setItemStack(new ItemStack(type));
+            return true;
         }
-        return changed;
+        spawnItem(at, entry.material(), new ItemStack(type), nicheKey);
+        return true;
     }
 
-    private static String[] signLines(TargetEntry entry, Material type) {
-        String name = type != null ? formatMaterialName(type) : entry.material();
-        String[] lines = {"", "", "", ""};
-        // Word-wrap the name over the first three lines (~15 chars fit a sign line).
-        int line = 0;
-        StringBuilder cur = new StringBuilder();
-        for (String word : name.split(" ")) {
-            if (cur.length() > 0 && cur.length() + 1 + word.length() > 15) {
-                if (line == 2) break;
-                lines[line++] = cur.toString();
-                cur.setLength(0);
-            }
-            if (cur.length() > 0) cur.append(' ');
-            cur.append(word);
+    /**
+     * Where the floating item sits for a head: centred on the head and lifted by
+     * {@code display.item-offset-y}. Wall heads hug the wall, so the item is
+     * pulled back towards it by the same quarter block.
+     */
+    public Location itemLocation(int[] headRel, boolean wall, BlockFace facing) {
+        Location base = plugin.resolve(headRel).add(0.5, 0, 0.5);
+        double lift = plugin.getConfig().getDouble("display.item-offset-y", 1.0);
+        base.add(0, lift, 0);
+        if (wall) {
+            base.add(-facing.getModX() * 0.25, 0, -facing.getModZ() * 0.25);
         }
-        lines[line] = cur.toString();
-        lines[3] = switch (entry.rarity()) {
-            case "rare" -> "§6Rare";
-            case "uncommon" -> "§bUncommon";
-            default -> "§7Common";
-        };
-        return lines;
+        return base;
     }
 
-    /** The item frame hanging in exactly this block cell, or null. */
-    public static ItemFrame findFrame(World world, Location cell) {
-        Location centre = cell.clone().add(0.5, 0.5, 0.5);
-        for (var ent : world.getNearbyEntities(centre, 0.5, 0.5, 0.5)) {
-            if (ent instanceof ItemFrame f
-                    && f.getLocation().getBlockX() == cell.getBlockX()
-                    && f.getLocation().getBlockY() == cell.getBlockY()
-                    && f.getLocation().getBlockZ() == cell.getBlockZ()) {
-                return f;
+    /** Spawn a tagged floating item. Also used by the /bvsetup preview. */
+    public ItemDisplay spawnItem(Location at, String tag, ItemStack item, NamespacedKey key) {
+        float scale = (float) plugin.getConfig().getDouble("display.item-scale", 0.4);
+        return at.getWorld().spawn(at, ItemDisplay.class, d -> {
+            d.getPersistentDataContainer().set(key, PersistentDataType.STRING, tag);
+            d.setItemStack(item);
+            d.setItemDisplayTransform(ItemDisplay.ItemDisplayTransform.FIXED);
+            d.setBillboard(Display.Billboard.VERTICAL);
+            d.setTransformation(new Transformation(
+                    new Vector3f(), new AxisAngle4f(),
+                    new Vector3f(scale, scale, scale), new AxisAngle4f()));
+            d.setPersistent(true);
+        });
+    }
+
+    private ItemDisplay findItem(World world, Location at, String material) {
+        for (Entity e : world.getNearbyEntities(at, 0.4, 0.4, 0.4)) {
+            if (e instanceof ItemDisplay d
+                    && material.equals(d.getPersistentDataContainer().get(nicheKey, PersistentDataType.STRING))) {
+                return d;
             }
         }
         return null;
-    }
-
-    private static PlayerProfile parseProfile(World world, String json) {
-        if (json == null || json.isBlank()) return null;
-        try {
-            JsonObject o = JsonParser.parseString(json).getAsJsonObject();
-            return HeadUtil.fromJson(org.bukkit.Bukkit.getServer(), o);
-        } catch (Exception e) {
-            return null;
-        }
     }
 }

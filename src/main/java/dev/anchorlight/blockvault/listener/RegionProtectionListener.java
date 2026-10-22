@@ -24,9 +24,10 @@ import org.bukkit.event.hanging.HangingBreakEvent;
 import org.bukkit.event.player.PlayerInteractEntityEvent;
 
 /**
- * Everything that keeps the display layer and the seals intact. The display is
- * entity-based (item frames + heads), so without this a single creeper erases
- * a wall of donations.
+ * Everything that keeps the display layer and the seals intact. Niches are
+ * player heads (blocks) with floating item displays, so without this a single
+ * creeper erases a wall of donations. Item-frame rules stay for any decorative
+ * frames in the build.
  */
 public final class RegionProtectionListener implements Listener {
 

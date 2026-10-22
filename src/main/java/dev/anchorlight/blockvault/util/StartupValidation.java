@@ -28,7 +28,7 @@ public final class StartupValidation {
     /** Blocks that exist in the registry but cannot be obtained in survival (brief section 9). */
     private static final Set<String> UNOBTAINABLE = Set.of(
             "air", "barrier", "bedrock", "budding_amethyst", "chain_command_block", "chorus_plant",
-            "command_block", "dirt_path", "end_portal_frame", "farmland", "frogspawn", "jigsaw", "light",
+            "command_block", "dirt_path", "end_portal_frame", "farmland", "frogspawn", "jigsaw", "light", "petrified_oak_slab", "player_head",
             "infested_chiseled_stone_bricks", "infested_cobblestone", "infested_cracked_stone_bricks",
             "infested_deepslate", "infested_mossy_stone_bricks", "infested_stone", "infested_stone_bricks",
             "reinforced_deepslate", "repeating_command_block", "spawner", "structure_block",
@@ -50,20 +50,39 @@ public final class StartupValidation {
 
         int problems = 0;
 
-        // Two blocks must never share a shelf cell - the second head would hide the first.
+        // Two blocks must never share a niche - the second head would hide the first.
         Map<String, String> byCell = new java.util.HashMap<>();
         for (TargetEntry e : plugin.manifest().entries().values()) {
-            String cell = e.sign()[0] + "," + e.sign()[1] + "," + e.sign()[2];
+            String cell = e.head()[0] + "," + e.head()[1] + "," + e.head()[2];
             String prev = byCell.putIfAbsent(cell, e.material());
             if (prev != null) {
-                log.warning("[validation] shelf " + cell + " is used by both "
+                log.warning("[validation] niche " + cell + " is used by both "
                         + prev + " and " + e.material() + " - one will be unreachable");
                 problems++;
             }
         }
 
-        // manifest <-> vault_items.yml
-        for (var entry : manifest.entrySet()) {
+        // Blocks that can never be donated make 100% impossible.
+        for (String k : manifest.keySet()) {
+            if (UNOBTAINABLE.contains(k)) {
+                log.warning("[validation] " + k + " is in the target list but cannot be obtained in survival");
+                problems++;
+            }
+        }
+
+        // Every floor that has blocks should have its seal recorded (floor 1 has none).
+        for (int ch = 2; ch <= 6; ch++) {
+            final int c = ch;
+            boolean hasBlocks = plugin.manifest().entries().values().stream().anyMatch(e -> e.chapter() == c);
+            if (hasBlocks && plugin.manifest().seal(ch) == null) {
+                log.warning("[validation] floor " + ch + " has no seal recorded - /bvsetup seal " + ch);
+                problems++;
+            }
+        }
+
+        // manifest <-> vault_items.yml (optional legacy cross-check; the layout
+        // built by /bvsetup carries rarities itself)
+        if (!items.isEmpty()) for (var entry : manifest.entrySet()) {
             String r = items.get(entry.getKey());
             if (r == null) {
                 log.warning("[validation] " + entry.getKey() + " is in the manifest but missing from vault_items.yml");
@@ -74,7 +93,7 @@ public final class StartupValidation {
                 problems++;
             }
         }
-        for (String k : items.keySet()) {
+        if (!items.isEmpty()) for (String k : items.keySet()) {
             if (!manifest.containsKey(k)) {
                 log.warning("[validation] " + k + " is in vault_items.yml but not the manifest");
                 problems++;
@@ -118,7 +137,9 @@ public final class StartupValidation {
 
         if (problems == 0) {
             log.info("[validation] " + manifest.size()
-                    + " blocks matched across manifest, vault_items.yml and bv_target.");
+                    + " blocks matched across the layout and bv_target ("
+                    + plugin.manifest().reserved().size() + " reserved for other editions, "
+                    + plugin.manifest().spares().size() + " spare niches).");
         } else {
             log.warning("[validation] " + problems + " discrepancy/ies found - see above.");
         }
@@ -132,10 +153,7 @@ public final class StartupValidation {
             yaml = YamlConfiguration.loadConfiguration(override);
         } else {
             try (InputStream in = plugin.getResource("vault_items.yml")) {
-                if (in == null) {
-                    plugin.getLogger().warning("[validation] vault_items.yml not found - skipping that check");
-                    return out;
-                }
+                if (in == null) return out; // optional: rarities live in the layout now
                 yaml = YamlConfiguration.loadConfiguration(
                         new InputStreamReader(in, StandardCharsets.UTF_8));
             } catch (Exception e) {

@@ -84,12 +84,12 @@ public final class QueryCommand implements CommandExecutor, TabCompleter {
     private void find(CommandSender sender, String[] args) {
         TargetEntry e = require(sender, args);
         if (e == null) return;
-        int[] s = e.sign();
-        org.bukkit.Location loc = plugin.resolve(e.sign());
+        int[] s = e.head();
+        org.bukkit.Location loc = plugin.resolve(e.head());
         String room = roomFor(e.chapter());
         plugin.tell(sender, "§6" + pretty(e)
-                + " §7— Level " + e.chapter() + ", " + room);
-        plugin.tell(sender, "§7  shelf at §f" + loc.getBlockX() + " " + loc.getBlockY() + " "
+                + " §7— Level " + e.chapter() + ", " + room + ", " + e.section());
+        plugin.tell(sender, "§7  niche at §f" + loc.getBlockX() + " " + loc.getBlockY() + " "
                 + loc.getBlockZ() + " §7(relative " + s[0] + " " + s[1] + " " + s[2] + ", facing " + e.facing() + ")");
     }
 
@@ -101,7 +101,16 @@ public final class QueryCommand implements CommandExecutor, TabCompleter {
         plugin.tell(sender, "§6" + pretty(e));
         plugin.tell(sender, "§7  rarity §f" + e.rarity() + " §7· points §f" + pts
                 + " §7· chapter §f" + e.chapter() + " §7· section §f" + e.section());
-        plugin.tell(sender, have ? "§a  already in the vault" : "§e  still needed");
+        if (!have) {
+            plugin.tell(sender, "§e  still needed §7- the first donor earns " + pts + " points");
+            return;
+        }
+        plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
+            List<Database.TopDonor> top = plugin.database().topDonorsOf(e.material(), 1);
+            plugin.getServer().getScheduler().runTask(plugin, () -> plugin.tell(sender,
+                    "§a  unlocked §7· head belongs to §f"
+                    + (top.isEmpty() ? "—" : top.get(0).name() + " §7(" + top.get(0).quantity() + " given)")));
+        });
     }
 
     private void missing(CommandSender sender, String[] args) {
@@ -164,10 +173,11 @@ public final class QueryCommand implements CommandExecutor, TabCompleter {
             Database.MyStats s = plugin.database().myStats(player.getUniqueId());
             plugin.getServer().getScheduler().runTask(plugin, () -> {
                 plugin.tell(player, "§6Your vault record");
-                plugin.tell(player, "§7  blocks donated §f" + s.blocks()
+                plugin.tell(player, "§7  blocks unlocked §f" + s.blocks()
+                        + " §7· items given §f" + s.items()
                         + " §7· points §f" + s.points()
                         + " §7· rank §f" + (s.rank() > 0 ? "#" + s.rank() : "—"));
-                plugin.tell(player, "§7  every donation is a first — one of each block is allowed.");
+                plugin.tell(player, "§7  points come from unlocking blocks; give more of any block to claim its head.");
             });
         });
     }
@@ -177,14 +187,21 @@ public final class QueryCommand implements CommandExecutor, TabCompleter {
         if (e == null) return;
         plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
             Database.SubmissionRow row = plugin.database().submission(e.material());
+            List<Database.TopDonor> top = plugin.database().topDonorsOf(e.material(), 5);
             plugin.getServer().getScheduler().runTask(plugin, () -> {
                 if (row == null) {
                     plugin.tell(sender, "§e" + e.material() + " has not been donated yet.");
                     return;
                 }
                 String when = row.submittedAt().toLocalDateTime().format(DATE);
-                plugin.tell(sender, "§6" + e.material() + " §7was donated by §f" + row.name()
+                plugin.tell(sender, "§6" + e.material() + " §7was unlocked by §f" + row.name()
                         + " §7on §f" + when + " §7(+" + row.points() + " pts)");
+                int rank = 1;
+                for (Database.TopDonor d : top) {
+                    sender.sendMessage("§7  " + (rank == 1 ? "§6" : "§e") + rank + ". §f" + d.name()
+                            + " §7" + d.quantity() + " given" + (rank == 1 ? " §6(head)" : ""));
+                    rank++;
+                }
             });
         });
     }

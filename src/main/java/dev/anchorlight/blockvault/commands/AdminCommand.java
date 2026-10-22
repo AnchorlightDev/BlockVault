@@ -4,14 +4,10 @@ import dev.anchorlight.blockvault.BlockVault;
 import dev.anchorlight.blockvault.db.Database;
 import dev.anchorlight.blockvault.model.TargetEntry;
 import dev.anchorlight.blockvault.util.VaultUtil;
-import org.bukkit.Location;
-import org.bukkit.Material;
-import org.bukkit.World;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.TabCompleter;
-import org.bukkit.entity.ItemFrame;
 
 import java.io.File;
 import java.time.LocalDateTime;
@@ -63,39 +59,27 @@ public final class AdminCommand implements CommandExecutor, TabCompleter {
                     plugin.tell(sender, "§e" + material + " has no submission to revoke.");
                     return;
                 }
-                Location head = plugin.resolve(entry.head());
-                if (head.getWorld() != null) head.getBlock().setType(Material.AIR, false);
+                // Every tally for the block is gone, so the niche goes back to a plain head.
+                new VaultUtil(plugin).applyNiche(entry, null);
+                plugin.displays().refresh();
+                plugin.chapters().check();
                 String who = plugin.getServer().getOfflinePlayer(r.donor()).getName();
-                plugin.tell(sender, "§aRevoked " + material + " from §f" + who
-                        + "§a; refunded " + r.pointsRefunded() + " points.");
+                plugin.tell(sender, "§aRevoked " + material + " (first donated by §f" + who
+                        + "§a); refunded " + r.pointsRefunded() + " points and cleared every donation of it.");
             });
         });
     }
 
     private void repair(CommandSender sender) {
-        World world = plugin.originWorld();
-        if (world == null) {
+        if (plugin.originWorld() == null) {
             plugin.tell(sender, "§cOrigin world is not loaded.");
             return;
         }
-        int frames = 0;
-        for (TargetEntry e : plugin.manifest().entries().values()) {
-            Location frameLoc = plugin.resolve(e.frame());
-            if (VaultUtil.findFrame(world, frameLoc) == null) {
-                world.spawn(frameLoc, ItemFrame.class, f -> {
-                    f.setFacingDirection(e.face(), true);
-                    f.setFixed(true);
-                    f.setInvulnerable(true);
-                    f.setSilent(true);
-                    f.setGlowing("rare".equals(e.rarity())); // highlight rare-tier shelves
-                });
-                frames++;
-            }
-        }
-        // Heads are reconciled by the standard pass.
-        plugin.tell(sender, "§aRepair: respawned " + frames + " missing frames. "
-                + "Running head reconciliation…");
+        // Missing heads are rebuilt from the manifest and every floating item is
+        // respawned or corrected by the standard reconcile pass.
+        plugin.tell(sender, "§aRepair: rebuilding niche heads and item displays…");
         new VaultUtil(plugin).updateVaultState(sender);
+        plugin.displays().refresh();
     }
 
     private void backup(CommandSender sender) {

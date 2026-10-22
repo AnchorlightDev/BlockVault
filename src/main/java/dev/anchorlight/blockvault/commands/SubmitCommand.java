@@ -6,18 +6,25 @@ import dev.anchorlight.blockvault.model.TargetEntry;
 import dev.anchorlight.blockvault.util.HeadUtil;
 import dev.anchorlight.blockvault.util.VaultUtil;
 import org.bukkit.GameMode;
-import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.Sound;
+import org.bukkit.block.Container;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.BlockStateMeta;
 
 /**
- * Submit the held block. Order is always: write -> confirm commit -> consume.
- * If the database is unreachable the item stays in the player's hand.
+ * {@code /bvsubmit [amount]} - donate the held block (the whole stack by default).
+ *
+ * <p>The first donation of a block unlocks it and earns its rarity points.
+ * Later donations earn no points but add to the donor's tally for that block;
+ * whoever has donated the most wears the niche head.
+ *
+ * <p>Order is always: write -> confirm commit -> consume. If the database is
+ * unreachable the items stay in the player's hand.
  */
 public class SubmitCommand implements CommandExecutor {
     private final BlockVault plugin;
@@ -67,66 +74,112 @@ public class SubmitCommand implements CommandExecutor {
             plugin.tell(player, "§c" + pretty + " is not part of this collection.");
             return true;
         }
-
-        Database db = plugin.database();
-        if (db.isCollected(material)) {
-            plugin.tell(player, "§e" + pretty + " has already been donated.");
+        // A shulker box (or any container item) with contents would take its
+        // contents with it - refuse rather than destroy someone's stash.
+        if (held.getItemMeta() instanceof BlockStateMeta bsm
+                && bsm.hasBlockState()
+                && bsm.getBlockState() instanceof Container box
+                && !box.getInventory().isEmpty()) {
+            plugin.tell(player, "§cEmpty the " + pretty + " first - its contents would be lost.");
             return true;
         }
 
-        int points = plugin.getConfig().getInt("points." + entry.rarity(), 1);
-        org.bukkit.profile.PlayerProfile profile = player.getPlayerProfile();
-        String profileJson = HeadUtil.toJson(profile);
+        int amount = held.getAmount();
+        if (args.length > 0) {
+            try {
+                amount = Integer.parseInt(args[0]);
+            } catch (NumberFormatException e) {
+                plugin.tell(player, "§cUsage: /bvsubmit [amount]");
+                return true;
+            }
+            if (amount < 1) {
+                plugin.tell(player, "§cAmount must be at least 1.");
+                return true;
+            }
+            if (amount > held.getAmount()) {
+                plugin.tell(player, "§cYou're only holding " + held.getAmount() + ".");
+                return true;
+            }
+        }
+        final int quantity = amount;
+        final ItemStack template = held.clone();
 
-        plugin.tell(player, "§7Submitting " + pretty + "…");
+        int firstPoints = plugin.getConfig().getInt("points." + entry.rarity(), 1);
+        String profileJson = HeadUtil.toJson(player.getPlayerProfile());
+        Database db = plugin.database();
+
+        plugin.tell(player, "§7Donating " + quantity + "× " + pretty + "…");
 
         plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
-            Database.SubmitOutcome outcome =
-                    db.submit(material, player.getUniqueId(), player.getName(), points, profileJson);
+            Database.SubmitResult r = db.submit(material, player.getUniqueId(), player.getName(),
+                    quantity, firstPoints, profileJson);
 
             plugin.getServer().getScheduler().runTask(plugin, () -> {
-                switch (outcome) {
-                    case ALREADY_TAKEN -> plugin.tell(player,
-                            "§e" + pretty + " was donated by someone else first. Your block is untouched.");
-                    case DB_ERROR -> plugin.tell(player,
-                            "§cCould not record that right now - your block is still in your hand. Please retry.");
-                    case OK -> {
-                        // Write committed. Only now is it safe to consume the item.
-                        consumeOne(player, type);
-                        placeHead(entry, profile);
-                        plugin.tell(player, "§aDonated " + pretty + "! §7(+" + points
-                                + (points == 1 ? " point)" : " points)"));
-                        celebrate(player, entry.rarity());
-                        if ("rare".equals(entry.rarity())) {
-                            plugin.webhook().rareSubmission(material, player.getName(), points);
-                        }
-                        plugin.displays().refresh();
-                        plugin.chapters().check();
-                    }
+                if (r.outcome() != Database.SubmitOutcome.OK) {
+                    plugin.tell(player,
+                            "§cCould not record that right now - your items are still in your hand. Please retry.");
+                    return;
                 }
+                // Write committed. Only now is it safe to consume the items.
+                consume(player, template, quantity);
+
+                if (r.first()) {
+                    plugin.tell(player, "§aYou unlocked " + pretty + "! §7(+" + r.points()
+                            + (r.points() == 1 ? " point)" : " points)"));
+                    celebrate(player, entry.rarity());
+                    if ("rare".equals(entry.rarity())) {
+                        plugin.webhook().rareSubmission(material, player.getName(), r.points());
+                    }
+                    plugin.chapters().check();
+                } else {
+                    plugin.tell(player, "§aDonated " + quantity + "× " + pretty + ".");
+                    player.playSound(player.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 1f, 1.4f);
+                }
+
+                Database.TopDonor top = r.top();
+                boolean iLead = top != null && top.uuid().equals(player.getUniqueId());
+                plugin.tell(player, "§7  You've given §f" + r.myQuantity() + " §7in total. "
+                        + (iLead ? "§6You're the top donor - the head is yours."
+                                 : top == null ? "" : "§7Top donor: §f" + top.name() + " §7(" + top.quantity() + ")"));
+
+                // Niche head follows the top donor, but only on an open floor
+                // (locked floors keep plain heads; the reconcile pass fixes them on unlock).
+                if (plugin.chapters().isOpen(entry.chapter())) {
+                    vaultUtil.applyNiche(entry, top);
+                }
+                plugin.displays().refresh();
             });
         });
         return true;
     }
 
-    private void consumeOne(Player player, Material expected) {
-        // Remove one from anywhere in the inventory, not just the main hand:
-        // the write has committed and the block must be consumed (brief 1.1),
-        // even if the player shuffled it between the command and this tick.
-        var leftover = player.getInventory().removeItem(new ItemStack(expected, 1));
-        if (!leftover.isEmpty()) {
-            plugin.getLogger().warning(player.getName() + " no longer had " + expected
-                    + " when it was consumed; recorded but not removed from inventory.");
+    /**
+     * Remove {@code quantity} items like {@code template}, main hand first, then
+     * anywhere in the inventory (the write has committed, so they must go even
+     * if the player shuffled them between the command and this tick).
+     */
+    private void consume(Player player, ItemStack template, int quantity) {
+        int left = quantity;
+        ItemStack hand = player.getInventory().getItemInMainHand();
+        if (hand.isSimilar(template)) {
+            int take = Math.min(left, hand.getAmount());
+            hand.setAmount(hand.getAmount() - take);
+            player.getInventory().setItemInMainHand(hand.getAmount() > 0 ? hand : null);
+            left -= take;
         }
-    }
-
-    private void placeHead(TargetEntry entry, org.bukkit.profile.PlayerProfile profile) {
-        // Submissions for a not-yet-open chapter are credited, but the head
-        // stays hidden until the floor opens (the reconcile pass adds it then).
-        if (!plugin.chapters().isOpen(entry.chapter())) return;
-        Location loc = plugin.resolve(entry.head());
-        if (loc.getWorld() == null) return;
-        HeadUtil.placeHead(loc, entry.face(), profile);
+        ItemStack[] contents = player.getInventory().getStorageContents();
+        for (int i = 0; i < contents.length && left > 0; i++) {
+            ItemStack it = contents[i];
+            if (it == null || !it.isSimilar(template)) continue;
+            int take = Math.min(left, it.getAmount());
+            it.setAmount(it.getAmount() - take);
+            player.getInventory().setItem(i, it.getAmount() > 0 ? it : null);
+            left -= take;
+        }
+        if (left > 0) {
+            plugin.getLogger().warning(player.getName() + " was " + left + "× " + template.getType()
+                    + " short when the donation was consumed; recorded but not removed.");
+        }
     }
 
     private void celebrate(Player player, String rarity) {
@@ -137,5 +190,4 @@ public class SubmitCommand implements CommandExecutor {
         };
         player.playSound(player.getLocation(), sound, 1f, 1f);
     }
-
 }

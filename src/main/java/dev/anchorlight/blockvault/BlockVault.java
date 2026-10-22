@@ -57,14 +57,28 @@ public final class BlockVault extends JavaPlugin {
         ConfigUpdater.update(this, "config.yml");
         reloadConfig();
 
-        // The target list is a required artefact - never regenerated (brief section 7).
+        // /bvsetup builds the layout from the world, so it is available even
+        // before a layout exists.
+        register("bvsetup", setupCommand());
+
+        Path layout = getDataFolder().toPath().resolve(Manifest.FILE);
+        if (!Manifest.exists(layout, getClassLoader())) {
+            getLogger().warning("No " + Manifest.FILE + " yet - starting in SETUP MODE.");
+            getLogger().warning("Only /bvsetup is available. Scan each floor in-game, then restart.");
+            return;
+        }
         try {
-            Path override = getDataFolder().toPath().resolve("vault_slots.json");
-            this.manifest = Manifest.load(override, getClassLoader());
+            this.manifest = Manifest.load(layout, getClassLoader(), getConfig().getString("edition", "26.2"));
         } catch (Exception e) {
-            getLogger().severe("Could not load vault_slots.json: " + e.getMessage());
-            getLogger().severe("Generate it with tools/gen_artifacts.py and restart. Disabling.");
-            getServer().getPluginManager().disablePlugin(this);
+            getLogger().severe("Could not load " + Manifest.FILE + ": " + e.getMessage());
+            getLogger().severe("Fix or delete it (then /bvsetup again) and restart. Only /bvsetup is available.");
+            this.manifest = null;
+            return;
+        }
+        if (manifest.entries().isEmpty()) {
+            getLogger().warning(Manifest.FILE + " has no blocks for edition "
+                    + getConfig().getString("edition") + " - SETUP MODE. Run /bvsetup floor <n>.");
+            this.manifest = null;
             return;
         }
 
@@ -124,6 +138,7 @@ public final class BlockVault extends JavaPlugin {
 
     @Override
     public void onDisable() {
+        if (setup != null) setup.cancelAll();
         if (displays != null) displays.stop();
         if (chapters != null) chapters.stop();
         forceLoadChunks(false);
@@ -152,6 +167,7 @@ public final class BlockVault extends JavaPlugin {
      * Rebuilt by {@link #invalidateRegion()} after a config reload.
      */
     public Region region() {
+        if (manifest == null) return null;
         if (region == null) {
             World world = originWorld();
             if (world == null) return null;
@@ -211,6 +227,15 @@ public final class BlockVault extends JavaPlugin {
     /** Send a player-facing message through the configured prefix. */
     public void tell(org.bukkit.command.CommandSender to, String message) {
         to.sendMessage(prefix() + message);
+    }
+
+    private dev.anchorlight.blockvault.setup.SetupCommand setup;
+
+    private dev.anchorlight.blockvault.setup.SetupCommand setupCommand() {
+        if (setup == null) setup = new dev.anchorlight.blockvault.setup.SetupCommand(this);
+        PluginCommand pc = getCommand("bvsetup");
+        if (pc != null) pc.setTabCompleter(setup);
+        return setup;
     }
 
     private void register(String name, CommandExecutor executor) {

@@ -42,7 +42,16 @@ update:
   # Seconds to wait after enable before the first pass, so worlds are loaded.
   startup-delay-seconds: 30
 
-# Points awarded per rarity. Lowercase keys - Bukkit paths are case-sensitive.
+# Floating item shown above each niche head on open floors.
+display:
+  # Blocks above the head's block position (the head itself sits at ~0.25-0.75).
+  item-offset-y: 1.0
+  # Size of the floating item (1.0 = a full block).
+  item-scale: 0.4
+
+# Points awarded for UNLOCKING a block (its first donation), per rarity.
+# Repeat donations earn no points; they decide who wears the niche head.
+# Lowercase keys - Bukkit paths are case-sensitive.
 points:
   common: 1
   uncommon: 5
