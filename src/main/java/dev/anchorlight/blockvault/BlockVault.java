@@ -60,6 +60,7 @@ public final class BlockVault extends JavaPlugin {
         // /bvsetup builds the layout from the world, so it is available even
         // before a layout exists.
         register("bvsetup", setupCommand());
+        getServer().getPluginManager().registerEvents(setup, this); // setup wand
 
         Path layout = getDataFolder().toPath().resolve(Manifest.FILE);
         if (!Manifest.exists(layout, getClassLoader())) {

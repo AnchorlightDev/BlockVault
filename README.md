@@ -34,8 +34,10 @@ below 26.3 so the build can't pick up a newer API.
    and only `/bvsetup` works.
 4. **Scan each floor in-game** (before `/bvstart`):
    ```
-   /bvsetup pos1              stand at one corner of the floor
-   /bvsetup pos2              stand at the opposite corner
+   /bvsetup wand              get the setup wand (blaze rod), then:
+                                left-click one corner block   -> pos1
+                                right-click the opposite one  -> pos2
+                              (or stand on each corner: /bvsetup pos1 / pos2)
    /bvsetup floor 1           scan + preview floating items
    /bvsetup confirm           (or /bvsetup cancel)
    /bvsetup seal 2            looking at floor 2's iron-bar seal (repeat 2-6)
@@ -93,7 +95,9 @@ heads, no item, not counted in the season total.
 
 ## The six floors
 
-The season runs across six themed floors, one per chapter. Each unlocks on its
+The season runs across six themed floors, one per chapter, numbered from the
+bottom up: Floor 1 (The Undercroft) is the lowest level and Floor 6 (The
+Observatory) is the top. Each floor's seal is the iron bars on the way up into it. Each unlocks on its
 scheduled date or when the previous chapter reaches 90%, whichever comes first;
 earlier floors never close. Completing a floor (100%) grants its advancement
 from the bundled datapack.

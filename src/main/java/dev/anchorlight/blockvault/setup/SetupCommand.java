@@ -26,7 +26,16 @@ import org.bukkit.entity.Display;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.TextDisplay;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.EventPriority;
+import org.bukkit.event.Listener;
+import org.bukkit.event.block.Action;
+import org.bukkit.event.block.BlockBreakEvent;
+import org.bukkit.event.player.PlayerInteractEvent;
+import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.persistence.PersistentDataType;
 
 import java.io.IOException;
 import java.io.Reader;
@@ -48,6 +57,7 @@ import java.util.UUID;
  * {@code /bvsetup} - builds vault_slots.json from the world instead of by hand.
  *
  * <pre>
+ *   /bvsetup wand                setup wand: left-click a block = pos1, right-click = pos2
  *   /bvsetup pos1 | pos2         corners of one floor (your feet position)
  *   /bvsetup floor &lt;1-6&gt;       scan, assign and preview that floor
  *   /bvsetup confirm | cancel    save or discard the preview
@@ -64,7 +74,7 @@ import java.util.UUID;
  * <p>Only allowed before {@code /bvstart}: the layout is frozen for the season.
  * Works even when no layout exists yet (the plugin starts in setup mode).
  */
-public final class SetupCommand implements CommandExecutor, TabCompleter {
+public final class SetupCommand implements CommandExecutor, TabCompleter, Listener {
 
     private static final int MAX_VOLUME = 4_000_000;
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
@@ -77,6 +87,7 @@ public final class SetupCommand implements CommandExecutor, TabCompleter {
     private final BlockVault plugin;
     private final VaultUtil vaultUtil;
     private final NamespacedKey previewKey;
+    private final NamespacedKey wandKey;
     private final Map<UUID, Location[]> selections = new HashMap<>();
     private final Map<UUID, Pending> pending = new HashMap<>();
 
@@ -84,6 +95,7 @@ public final class SetupCommand implements CommandExecutor, TabCompleter {
         this.plugin = plugin;
         this.vaultUtil = new VaultUtil(plugin);
         this.previewKey = new NamespacedKey(plugin, "setup_preview");
+        this.wandKey = new NamespacedKey(plugin, "setup_wand");
     }
 
     private Path layoutFile() {
@@ -112,8 +124,9 @@ public final class SetupCommand implements CommandExecutor, TabCompleter {
             return true;
         }
         switch (sub) {
-            case "pos1" -> setPos(player, 0);
-            case "pos2" -> setPos(player, 1);
+            case "wand" -> giveWand(player);
+            case "pos1" -> setPos(player, 0, player.getLocation());
+            case "pos2" -> setPos(player, 1, player.getLocation());
             case "floor" -> floor(player, args);
             case "confirm" -> confirm(player);
             case "cancel" -> cancel(player, true);
@@ -126,7 +139,8 @@ public final class SetupCommand implements CommandExecutor, TabCompleter {
 
     private void help(CommandSender s) {
         plugin.tell(s, "§6Vault setup");
-        s.sendMessage("§7 1. Stand at one corner of a floor: §f/bvsetup pos1§7, the opposite corner: §f/bvsetup pos2");
+        s.sendMessage("§7 1. §f/bvsetup wand§7, then left-click one corner block and right-click the opposite one");
+        s.sendMessage("§7    (or stand on each corner: §f/bvsetup pos1§7 / §f/bvsetup pos2§7)");
         s.sendMessage("§7 2. §f/bvsetup floor <1-6> §7- scans and previews the floating items");
         s.sendMessage("§7 3. §f/bvsetup confirm §7(or §f/bvsetup cancel§7)");
         s.sendMessage("§7 4. Look at each iron-bar seal: §f/bvsetup seal <2-6>");
@@ -136,11 +150,71 @@ public final class SetupCommand implements CommandExecutor, TabCompleter {
 
     // ------------------------------------------------------------------ selection
 
-    private void setPos(Player p, int i) {
+    private void setPos(Player p, int i, Location at) {
         Location[] sel = selections.computeIfAbsent(p.getUniqueId(), k -> new Location[2]);
-        sel[i] = p.getLocation().getBlock().getLocation();
-        plugin.tell(p, "§aPosition " + (i + 1) + " set to §f" + sel[i].getBlockX() + " "
-                + sel[i].getBlockY() + " " + sel[i].getBlockZ());
+        Location block = at.getBlock().getLocation();
+        if (block.equals(sel[i])) return; // creative left-click repeats; don't spam
+        sel[i] = block;
+        String size = "";
+        Location other = sel[1 - i];
+        if (other != null && block.getWorld() != null && block.getWorld().equals(other.getWorld())) {
+            int dx = Math.abs(block.getBlockX() - other.getBlockX()) + 1;
+            int dy = Math.abs(block.getBlockY() - other.getBlockY()) + 1;
+            int dz = Math.abs(block.getBlockZ() - other.getBlockZ()) + 1;
+            size = " §7(" + dx + "×" + dy + "×" + dz + " = " + ((long) dx * dy * dz) + " blocks)";
+        }
+        plugin.tell(p, "§aPosition " + (i + 1) + " set to §f" + block.getBlockX() + " "
+                + block.getBlockY() + " " + block.getBlockZ() + size);
+    }
+
+    // ------------------------------------------------------------------ wand
+
+    private void giveWand(Player p) {
+        ItemStack wand = new ItemStack(Material.BLAZE_ROD);
+        ItemMeta meta = wand.getItemMeta();
+        meta.setDisplayName("§6Vault Setup Wand");
+        meta.setLore(List.of("§7Left-click a block: §fposition 1",
+                             "§7Right-click a block: §fposition 2",
+                             "§8Never breaks or uses the block."));
+        meta.getPersistentDataContainer().set(wandKey, PersistentDataType.BYTE, (byte) 1);
+        wand.setItemMeta(meta);
+        var leftover = p.getInventory().addItem(wand);
+        if (!leftover.isEmpty()) {
+            plugin.tell(p, "§cYour inventory is full.");
+            return;
+        }
+        plugin.tell(p, "§aSetup wand given. §7Left-click one corner of a floor, right-click the opposite corner.");
+    }
+
+    private boolean isWand(ItemStack item) {
+        if (item == null || item.getType() != Material.BLAZE_ROD || !item.hasItemMeta()) return false;
+        return item.getItemMeta().getPersistentDataContainer().has(wandKey, PersistentDataType.BYTE);
+    }
+
+    /**
+     * Wand clicks set the corners. Runs first and always cancels, so the clicked
+     * block is never broken, placed against, opened or otherwise used.
+     */
+    @EventHandler(priority = EventPriority.LOWEST)
+    public void onWandClick(PlayerInteractEvent e) {
+        if (!isWand(e.getItem())) return;
+        e.setCancelled(true);
+        if (e.getHand() != EquipmentSlot.HAND) return; // one message per click, not per hand
+        Player p = e.getPlayer();
+        if (!p.hasPermission("blockvault.setup")) return;
+        if (e.getClickedBlock() == null) return; // clicked air
+        if (plugin.isVaultStarted()) {
+            plugin.tell(p, "§cThe vault is open - the layout is frozen. §7(/bvstart stop first on a test server.)");
+            return;
+        }
+        if (e.getAction() == Action.LEFT_CLICK_BLOCK) setPos(p, 0, e.getClickedBlock().getLocation());
+        else if (e.getAction() == Action.RIGHT_CLICK_BLOCK) setPos(p, 1, e.getClickedBlock().getLocation());
+    }
+
+    /** Backstop for creative mode, where a left-click can break the block outright. */
+    @EventHandler(priority = EventPriority.LOWEST)
+    public void onWandBreak(BlockBreakEvent e) {
+        if (isWand(e.getPlayer().getInventory().getItemInMainHand())) e.setCancelled(true);
     }
 
     // ------------------------------------------------------------------ floor scan
@@ -548,7 +622,7 @@ public final class SetupCommand implements CommandExecutor, TabCompleter {
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
         if (args.length == 1) {
             List<String> out = new ArrayList<>();
-            for (String s : List.of("pos1", "pos2", "floor", "confirm", "cancel", "seal", "lobby", "status")) {
+            for (String s : List.of("wand", "pos1", "pos2", "floor", "confirm", "cancel", "seal", "lobby", "status")) {
                 if (s.startsWith(args[0].toLowerCase(Locale.ROOT))) out.add(s);
             }
             return out;

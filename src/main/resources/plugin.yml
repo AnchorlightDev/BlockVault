@@ -58,7 +58,7 @@ commands:
     permission: blockvault.repair
   bvsetup:
     description: Build the vault layout by scanning each floor's heads.
-    usage: /bvsetup <pos1|pos2|floor|confirm|cancel|seal|lobby|status>
+    usage: /bvsetup <wand|pos1|pos2|floor|confirm|cancel|seal|lobby|status>
     permission: blockvault.setup
   bvbackup:
     description: Write a timestamped database dump.
