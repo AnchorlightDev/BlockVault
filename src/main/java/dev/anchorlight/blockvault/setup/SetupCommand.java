@@ -141,7 +141,7 @@ public final class SetupCommand implements CommandExecutor, TabCompleter, Listen
         plugin.tell(s, "§6Vault setup");
         s.sendMessage("§7 1. §f/bvsetup wand§7, then left-click one corner block and right-click the opposite one");
         s.sendMessage("§7    (or stand on each corner: §f/bvsetup pos1§7 / §f/bvsetup pos2§7)");
-        s.sendMessage("§7 2. §f/bvsetup floor <1-6> §7- scans and previews the floating items");
+        s.sendMessage("§7 2. §f/bvsetup floor <1-6> §7- scans and previews each block and its name under its head");
         s.sendMessage("§7 3. §f/bvsetup confirm §7(or §f/bvsetup cancel§7)");
         s.sendMessage("§7 4. Look at each iron-bar seal: §f/bvsetup seal <2-6>");
         s.sendMessage("§7 5. Look at the lobby leader head: §f/bvsetup lobby");
@@ -339,18 +339,30 @@ public final class SetupCommand implements CommandExecutor, TabCompleter, Listen
         for (Placement pl : placed) {
             Material m = Material.matchMaterial(pl.row().block());
             int[] rel = rel(pl.niche().abs(), origin);
-            Location at = vaultUtil.itemLocation(rel, true, faceOf(pl.niche().facing()));
+            BlockFace face = faceOf(pl.niche().facing());
+            Location at = vaultUtil.itemLocation(rel, true, face);
+            Location nameAt = vaultUtil.labelLocation(rel, face);
             if (m != null && m.isItem()) {
                 var d = vaultUtil.spawnItem(at, "preview", new ItemStack(m), previewKey);
                 d.setPersistent(false);
                 out.add(d);
+                var l = vaultUtil.spawnLabel(nameAt, "preview", VaultUtil.labelText(pl.row().block()), previewKey);
+                l.setPersistent(false);
+                out.add(l);
             } else {
-                // Other-edition block this server doesn't know yet: label it instead.
-                out.add(label(at, "§d" + pl.row().block() + "\n§7" + pl.row().edition()));
+                // Other-edition block this server doesn't know yet: name + edition only.
+                var l = vaultUtil.spawnLabel(nameAt, "preview",
+                        "§d" + VaultUtil.labelText(pl.row().block()).substring(2) + "\n§7" + pl.row().edition(),
+                        previewKey);
+                l.setPersistent(false);
+                out.add(l);
             }
         }
         for (Niche n : spares) {
-            out.add(label(vaultUtil.itemLocation(rel(n.abs(), origin), true, faceOf(n.facing())), "§8spare"));
+            var l = vaultUtil.spawnLabel(vaultUtil.labelLocation(rel(n.abs(), origin), faceOf(n.facing())),
+                    "preview", "§8spare", previewKey);
+            l.setPersistent(false);
+            out.add(l);
         }
         for (int i = 0; i < leaders.size(); i++) {
             Niche n = leaders.get(i);

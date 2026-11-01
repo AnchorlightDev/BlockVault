@@ -45,12 +45,15 @@ update:
   # Seconds to wait after enable before the first pass, so worlds are loaded.
   startup-delay-seconds: 30
 
-# Floating item shown above each niche head on open floors.
+# What each niche shows on open floors, on the block directly below its head:
+# the block as a small item, with its name underneath.
 display:
-  # Blocks above the head's block position (the head itself sits at ~0.25-0.75).
-  item-offset-y: 1.0
-  # Size of the floating item (1.0 = a full block).
+  # Size of the item (1.0 = a full block).
   item-scale: 0.4
+  # Show the block's name under the item.
+  label: true
+  # Text size of the name (long names wrap onto a second line).
+  label-scale: 0.35
 
 # Points awarded for UNLOCKING a block (its first donation), per rarity.
 # Repeat donations earn no points; they decide who wears the niche head.

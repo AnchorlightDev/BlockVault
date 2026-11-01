@@ -38,7 +38,7 @@ below 26.3 so the build can't pick up a newer API.
                                 left-click one corner block   -> pos1
                                 right-click the opposite one  -> pos2
                               (or stand on each corner: /bvsetup pos1 / pos2)
-   /bvsetup floor 1           scan + preview floating items
+   /bvsetup floor 1           scan + preview each block and its name
    /bvsetup confirm           (or /bvsetup cancel)
    /bvsetup seal 2            looking at floor 2's iron-bar seal (repeat 2-6)
    /bvsetup lobby             looking at the lobby leader head (optional)
@@ -75,8 +75,9 @@ heads, no item, not counted in the season total.
   first and simultaneous donors race safely. `/bvsubmit` gives the whole held
   stack; `/bvsubmit <n>` gives part of it. Container items with contents are
   refused.
-- **Niches are heads + a floating item.** On open floors a small item display
-  floats above each niche head showing its block. Locked floors show plain
+- **Niches are heads + the block and its name.** On open floors the block is
+  shown as a small item on the face of the block directly below each niche head,
+  with its name underneath (`display.label` / `label-scale` in config). Locked floors show plain
   heads and no items, so freecam or x-ray reveals nothing. `/bvfind`, `/bvinfo`,
   `/bvhistory` and `/bvmissing` also hide locked floors unless the sender has
   `blockvault.spoilers` (op by default).
@@ -89,9 +90,6 @@ heads, no item, not counted in the season total.
   `iron_bars` seal and runs a broadcast/title/fireworks/BossBar ceremony.
 - **The target list is frozen per `edition`.** New blocks go in as a new edition,
   never the running one.
-- **Chapter advancements** ship as a bundled datapack, written into
-  `<world>/datapacks/blockvault/` on load and granted by the plugin when a
-  chapter reaches 100%. A world reload may be needed the first time.
 
 ## The six floors
 
@@ -99,20 +97,19 @@ The season runs across six themed floors, one per chapter, numbered from the
 bottom up: Floor 1 (The Undercroft) is the lowest level and Floor 6 (The
 Observatory) is the top. Each floor's seal is the iron bars on the way up into it. Each unlocks on its
 scheduled date or when the previous chapter reaches 90%, whichever comes first;
-earlier floors never close. Completing a floor (100%) grants its advancement
-from the bundled datapack.
+earlier floors never close. Completing a floor (100%) is announced in chat and
+on the Discord webhook.
 
-| # | Floor | Advancement | Opens | Icon |
-|---|---|---|---|---|
-| 1 | The Undercroft | Foundations | 2026-01-01 (`/bvstart`) | Chiseled Stone Bricks |
-| 2 | The Conservatory | Green & Growing | 2026-02-15 | Oak Sapling |
-| 3 | The Deep | Into the Deep | 2026-05-15 | Deepslate Bricks |
-| 4 | The Gallery | Every Colour | 2026-08-01 | Pink Wool |
-| 5 | The Forge | The Nether | 2026-09-15 | Nether Bricks |
-| 6 | The Observatory | The End | 2026-12-01 | Purpur Block |
+| # | Floor | Chapter | Opens |
+|---|---|---|---|
+| 1 | The Undercroft | Foundations | 2026-01-01 (`/bvstart`) |
+| 2 | The Conservatory | Green & Growing | 2026-02-15 |
+| 3 | The Deep | Into the Deep | 2026-05-15 |
+| 4 | The Gallery | Every Colour | 2026-08-01 |
+| 5 | The Forge | The Nether | 2026-09-15 |
+| 6 | The Observatory | The End | 2026-12-01 |
 
-Chapter 1 opens with `/bvstart` regardless of its date. Chapter 6's advancement
-uses the `challenge` frame; the rest use `goal`. Open dates come from the
+Chapter 1 opens with `/bvstart` regardless of its date. Open dates come from the
 `chapters:` block in `config.yml` and are re-read on every start, so you can
 adjust a future floor mid-season. Floors that haven't opened are empty, and
 query commands hide them unless the sender has `blockvault.spoilers`.

@@ -80,13 +80,8 @@ public final class ChapterService {
             }
 
             plugin.getServer().getScheduler().runTask(plugin, () -> {
-                // Re-attempt advancement grants for chapters already complete in the
-                // database. award() is idempotent, and this covers the case where the
-                // bundled datapack was not yet loaded when the chapter first completed.
-                for (int ch : doneInDb) {
-                    completed.add(ch);
-                    plugin.advancements().grantAll(ch);
-                }
+                // Chapters already complete in the database - don't celebrate them again.
+                completed.addAll(doneInDb);
 
                 long now = System.currentTimeMillis();
                 boolean started = plugin.isVaultStarted();
@@ -136,7 +131,6 @@ public final class ChapterService {
                 p.playSound(p.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, 1f, 1.2f));
         plugin.webhook().chapterOpened(row.chapter(), row.title() + " (complete)");
         plugin.displays().refresh();
-        plugin.advancements().grantAll(row.chapter());
         plugin.getLogger().info("Chapter " + row.chapter() + " reached 100%.");
     }
 

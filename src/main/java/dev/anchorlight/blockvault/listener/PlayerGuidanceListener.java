@@ -45,7 +45,6 @@ public final class PlayerGuidanceListener implements Listener {
 
     @EventHandler
     public void onJoin(PlayerJoinEvent e) {
-        plugin.advancements().syncPlayer(e.getPlayer());
         if (!vaultUtil.hasStarted()) return;
         int done = plugin.database().collectedCount();
         int total = plugin.manifest().entries().size();
