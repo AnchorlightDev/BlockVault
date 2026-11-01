@@ -77,7 +77,9 @@
     <dependency>
       <groupId>io.papermc.paper</groupId>
       <artifactId>paper-api</artifactId>
-      <version>[26.2.build,)</version>
+      <!-- Capped at 26.2: an open range would compile against 26.3+ API.
+           Pin an exact build here once the devtest server's build is known. -->
+      <version>[26.2.build,26.3)</version>
       <scope>provided</scope>
     </dependency>
     <!-- Supplied at runtime via plugin.yml `libraries:` - compile-only here. -->

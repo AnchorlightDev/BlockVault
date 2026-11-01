@@ -197,6 +197,11 @@ public final class BlockVault extends JavaPlugin {
                 + "vault chunks in " + r.world().getName() + ".");
     }
 
+    /** True once /bvstart has opened the event (and it has not been stopped). */
+    public boolean isVaultStarted() {
+        return database != null && database.isStarted();
+    }
+
     public Database database() {
         return database;
     }

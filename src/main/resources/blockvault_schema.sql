@@ -91,6 +91,16 @@ CREATE TABLE IF NOT EXISTS bv_chapter (
   PRIMARY KEY (chapter, edition)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- ---------------------------------------------------------------- state
+-- Whether the event is open (/bvstart). Lives here, not in config.yml, so a
+-- config migration or a hand-edited config can never silently close the vault.
+CREATE TABLE IF NOT EXISTS bv_state (
+  edition       VARCHAR(16)     NOT NULL,
+  started       TINYINT(1)      NOT NULL DEFAULT 0,
+  started_at    DATETIME        NULL,
+  PRIMARY KEY (edition)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 -- ---------------------------------------------------------------- audit
 -- Every state change. This is the reconstruction log if anything is ever lost.
 CREATE TABLE IF NOT EXISTS bv_audit (

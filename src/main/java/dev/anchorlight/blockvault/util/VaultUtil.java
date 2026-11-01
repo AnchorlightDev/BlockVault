@@ -46,7 +46,7 @@ public class VaultUtil {
     }
 
     public boolean hasStarted() {
-        return plugin.getConfig().getBoolean("vault.started", false);
+        return plugin.isVaultStarted();
     }
 
     /**

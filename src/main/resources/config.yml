@@ -5,6 +5,9 @@
 # apply it before first start.
 
 # Current target-list version. Blocks are frozen per edition (see brief section 1.3).
+#
+# Whether the event is open (/bvstart) is stored in the database (bv_state),
+# not here. An old 'vault.started' key is carried over once and then ignored.
 
 # config-version drives StoneLib's versioned config migration. Do not edit it
 # on a live server. Increment it in the bundled resource only when this file is
@@ -61,6 +64,8 @@ points:
 # this date OR when the previous chapter reaches 90%, whichever comes first.
 # Re-read every start and applied to any chapter not yet open, so you can adjust
 # a date mid-season. Chapter 1 opens with /bvstart regardless.
+# Nothing opens while the vault is closed; on /bvstart any floor whose date has
+# already passed opens straight away - use future dates on a test server.
 chapters:
   '1': { opens-at: '2026-01-01T00:00:00' }
   '2': { opens-at: '2026-02-15T00:00:00' }

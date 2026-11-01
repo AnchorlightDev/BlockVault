@@ -106,7 +106,7 @@ public final class SetupCommand implements CommandExecutor, TabCompleter {
             return true;
         }
         if (!sub.equals("help") && !sub.equals("cancel")
-                && plugin.getConfig().getBoolean("vault.started", false)) {
+                && plugin.isVaultStarted()) {
             plugin.tell(player, "§cThe vault is open - the layout is frozen for the season. "
                     + "§7(/bvstart stop first if this is a test server.)");
             return true;

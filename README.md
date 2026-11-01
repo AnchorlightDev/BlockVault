@@ -18,7 +18,9 @@ the shelf, and six themed floors unlock over the season.
 | Package | `dev.anchorlight.blockvault` |
 
 HikariCP and the MySQL driver are pulled at runtime via `libraries:` in
-`plugin.yml`. StoneLib is shaded into the jar.
+`plugin.yml`. StoneLib is shaded into the jar; it isn't in a public repository,
+so `mvn install` StoneLib 1.3 locally before building. `paper-api` is capped
+below 26.3 so the build can't pick up a newer API.
 
 ## Setup
 
@@ -49,7 +51,10 @@ HikariCP and the MySQL driver are pulled at runtime via `libraries:` in
    `.bak`).
 5. **Restart.** Bootstrap seeds `bv_target` / `bv_chapter` from the layout
    (re-seeded on every start until the first donation) and runs validation.
-6. `/bvstart` opens the event. The layout is frozen from then on.
+6. `/bvstart` opens the event. The layout is frozen from then on. The open/closed
+   state is stored in the database (`bv_state`), not `config.yml`. No floor opens
+   — by date or by 90% — until `/bvstart`; at that point any floor whose `opens-at`
+   has already passed opens immediately, so use future dates on a test server.
 
 `floor_assignment.tsv` (tab-separated `block chapter rarity section edition`)
 is bundled in the jar; drop an edited copy in the plugin folder to override it.

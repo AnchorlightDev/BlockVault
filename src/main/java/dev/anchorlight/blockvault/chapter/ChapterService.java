@@ -89,13 +89,18 @@ public final class ChapterService {
                 }
 
                 long now = System.currentTimeMillis();
+                boolean started = plugin.isVaultStarted();
                 boolean learnedOpen = false;
                 for (Database.ChapterRow row : rows) {
                     int ch = row.chapter();
                     // First pass after a restart: floors already open in the DB.
                     if (row.openedAt() != null && open.add(ch) && ch > 1) learnedOpen = true;
 
-                    if (!isOpen(ch) && row.openedAt() == null) {
+                    // Nothing new opens (by date or by 90%) while the vault is closed;
+                    // floors already open in the DB are still learned above so a
+                    // paused vault keeps showing them. /bvstart calls check() at once,
+                    // so any floor whose date has already passed opens then.
+                    if (started && !isOpen(ch) && row.openedAt() == null) {
                         boolean dateReached = row.opensAt() != null
                                 && now >= row.opensAt().getTime();
                         // Blocks for a locked floor can be donated blind, so the previous

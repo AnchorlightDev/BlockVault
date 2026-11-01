@@ -36,6 +36,8 @@ public final class Database {
     private final String edition;
     private final HikariDataSource ds;
     private final Set<String> collected = Collections.newSetFromMap(new ConcurrentHashMap<>());
+    /** Event open flag (bv_state). Read path is memory; changed only after a write commits. */
+    private volatile boolean started;
 
     public enum SubmitOutcome { OK, DB_ERROR }
 
@@ -91,6 +93,7 @@ public final class Database {
             seedChapters(c, manifest);
             syncChapterDates(c);
             warmCollected(c);
+            loadState(c);
         }
         plugin.getLogger().info("Database ready: " + collected.size()
                 + " blocks already collected for edition " + edition + ".");
@@ -618,6 +621,67 @@ public final class Database {
         } catch (SQLException e) {
             plugin.getLogger().severe("Audit write failed (" + action + "): " + e.getMessage());
         }
+    }
+
+    // ----------------------------------------------------------------- event state
+
+    private void loadState(Connection c) throws SQLException {
+        try (PreparedStatement ps = c.prepareStatement(
+                "SELECT started FROM bv_state WHERE edition = ?")) {
+            ps.setString(1, edition);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    started = rs.getBoolean(1);
+                    return;
+                }
+            }
+        }
+        // First boot with bv_state: carry over the old config.yml flag once.
+        boolean legacy = plugin.getConfig().getBoolean("vault.started", false);
+        try (PreparedStatement ps = c.prepareStatement(
+                "INSERT INTO bv_state (edition, started, started_at) "
+                + "VALUES (?, ?, IF(?, CURRENT_TIMESTAMP, NULL))")) {
+            ps.setString(1, edition);
+            ps.setBoolean(2, legacy);
+            ps.setBoolean(3, legacy);
+            ps.executeUpdate();
+        }
+        started = legacy;
+        if (legacy) plugin.getLogger().info("Carried vault.started=true over from config.yml into bv_state.");
+    }
+
+    /** In-memory read path. Never hits the database. */
+    public boolean isStarted() {
+        return started;
+    }
+
+    /**
+     * Open or close the event. Blocking - call async. The in-memory flag only
+     * changes once the write has committed.
+     *
+     * @return false if the write failed (nothing changed)
+     */
+    public boolean setStarted(boolean value, UUID actor) {
+        try (Connection c = ds.getConnection();
+             PreparedStatement ps = c.prepareStatement(
+                     "INSERT INTO bv_state (edition, started, started_at) "
+                     + "VALUES (?, ?, IF(?, CURRENT_TIMESTAMP, NULL)) "
+                     + "ON DUPLICATE KEY UPDATE started = ?, "
+                     + "started_at = IF(?, CURRENT_TIMESTAMP, started_at)")) {
+            ps.setString(1, edition);
+            ps.setBoolean(2, value);
+            ps.setBoolean(3, value);
+            ps.setBoolean(4, value);
+            ps.setBoolean(5, value);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            plugin.getLogger().severe("Could not " + (value ? "open" : "close")
+                    + " the vault: " + e.getMessage());
+            return false;
+        }
+        started = value;
+        audit(actor, value ? "event_open" : "event_close", null, null);
+        return true;
     }
 
     // ----------------------------------------------------------------- lookups
