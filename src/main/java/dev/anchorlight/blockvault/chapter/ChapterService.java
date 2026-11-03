@@ -20,12 +20,12 @@ import java.util.Set;
 
 /**
  * Owns which chapters are open. A chapter opens on its scheduled date OR when
- * the previous chapter reaches 90%, whichever comes first. Earlier chapters
+ * (if {@code early-open-percent} is set) the previous chapter reaches that
+ * share, whichever comes first. Earlier chapters
  * never close - only the spotlight (the "current" chapter) advances.
  */
 public final class ChapterService {
 
-    private static final double EARLY_OPEN_FRACTION = 0.90;
 
     private final BlockVault plugin;
     private final Set<Integer> open = Collections.synchronizedSet(new HashSet<>());
@@ -85,23 +85,26 @@ public final class ChapterService {
 
                 long now = System.currentTimeMillis();
                 boolean started = plugin.isVaultStarted();
+                double earlyFraction = Math.max(0, Math.min(100,
+                        plugin.getConfig().getInt("early-open-percent", 0))) / 100.0;
                 boolean learnedOpen = false;
                 for (Database.ChapterRow row : rows) {
                     int ch = row.chapter();
                     // First pass after a restart: floors already open in the DB.
                     if (row.openedAt() != null && open.add(ch) && ch > 1) learnedOpen = true;
 
-                    // Nothing new opens (by date or by 90%) while the vault is closed;
+                    // Nothing new opens (by date or early) while the vault is closed;
                     // floors already open in the DB are still learned above so a
                     // paused vault keeps showing them. /bvstart calls check() at once,
                     // so any floor whose date has already passed opens then.
                     if (started && !isOpen(ch) && row.openedAt() == null) {
                         boolean dateReached = row.opensAt() != null
                                 && now >= row.opensAt().getTime();
-                        // Blocks for a locked floor can be donated blind, so the previous
-                        // floor can hit 90% while still sealed - never skip past it.
-                        boolean prevNearlyDone = isOpen(ch - 1)
-                                && fraction(ch - 1, collected) >= EARLY_OPEN_FRACTION;
+                        // Optional early opening (early-open-percent, 0 = off). Blocks for a
+                        // locked floor can be donated blind, so the previous floor can hit the
+                        // threshold while still sealed - never skip past it.
+                        boolean prevNearlyDone = earlyFraction > 0 && isOpen(ch - 1)
+                                && fraction(ch - 1, collected) >= earlyFraction;
                         if (dateReached || prevNearlyDone) {
                             unlock(row, prevNearlyDone && !dateReached);
                         }
@@ -215,6 +218,6 @@ public final class ChapterService {
             }
         }
         plugin.getLogger().info("Chapter " + row.chapter() + " opened"
-                + (early ? " (early, previous floor >= 90%)." : "."));
+                + (early ? " (early, previous floor reached early-open-percent)." : "."));
     }
 }

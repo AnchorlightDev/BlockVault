@@ -56,6 +56,7 @@ public final class BlockVault extends JavaPlugin {
         if (!Manifest.exists(layout, getClassLoader())) {
             getLogger().warning("No " + Manifest.FILE + " yet - starting in SETUP MODE.");
             getLogger().warning("Only /bvsetup is available. Scan each floor in-game, then restart.");
+            setupModeOnly("no layout yet - scan the floors with /bvsetup, then restart the server.");
             return;
         }
         try {
@@ -64,12 +65,14 @@ public final class BlockVault extends JavaPlugin {
             getLogger().severe("Could not load " + Manifest.FILE + ": " + e.getMessage());
             getLogger().severe("Fix or delete it (then /bvsetup again) and restart. Only /bvsetup is available.");
             this.manifest = null;
+            setupModeOnly(Manifest.FILE + " could not be read - see the console.");
             return;
         }
         if (manifest.entries().isEmpty()) {
             getLogger().warning(Manifest.FILE + " has no blocks for edition "
                     + getConfig().getString("edition") + " - SETUP MODE. Run /bvsetup floor <n>.");
             this.manifest = null;
+            setupModeOnly("the layout has no blocks yet - scan the floors with /bvsetup, then restart.");
             return;
         }
 
@@ -97,7 +100,9 @@ public final class BlockVault extends JavaPlugin {
         StartupValidation.run(this);
 
         register("bvstart", new StartCommand(this));
-        register("bvsubmit", new SubmitCommand(this));
+        DonationBox donationBox = new DonationBox(this);
+        getServer().getPluginManager().registerEvents(donationBox, this);
+        register("bvsubmit", new SubmitCommand(this, donationBox));
         register("bvprogress", new ProgressCommand(this));
         register("bvleaderboard", new LeaderboardCommand(this));
         register("bvupdatestate", new UpdateStateCommand(this));
@@ -184,6 +189,23 @@ public final class BlockVault extends JavaPlugin {
                 + "vault chunks in " + r.world().getName() + ".");
     }
 
+    /**
+     * The timezone chapter opens-at dates are written in ({@code timezone} in
+     * config). Falls back to the server's own zone if unset or invalid.
+     */
+    public java.time.ZoneId zone() {
+        String id = getConfig().getString("timezone", "");
+        if (id != null && !id.isBlank()) {
+            try {
+                return java.time.ZoneId.of(id.trim());
+            } catch (Exception e) {
+                getLogger().warning("timezone '" + id + "' is not a valid zone id (e.g. Australia/Sydney)"
+                        + " - using the server's zone " + java.time.ZoneId.systemDefault() + ".");
+            }
+        }
+        return java.time.ZoneId.systemDefault();
+    }
+
     /** True once /bvstart has opened the event (and it has not been stopped). */
     public boolean isVaultStarted() {
         return database != null && database.isStarted();
@@ -228,6 +250,24 @@ public final class BlockVault extends JavaPlugin {
         PluginCommand pc = getCommand("bvsetup");
         if (pc != null) pc.setTabCompleter(setup);
         return setup;
+    }
+
+    /**
+     * In setup mode only /bvsetup is wired up. Give every other command a clear
+     * answer instead of Bukkit's bare usage line.
+     */
+    @SuppressWarnings("deprecation")
+    private void setupModeOnly(String reason) {
+        CommandExecutor notReady = (sender, cmd, label, args) -> {
+            tell(sender, "§eBlockVault is in setup mode: §f" + reason);
+            if (sender.hasPermission("blockvault.setup")) {
+                tell(sender, "§7Check progress with §f/bvsetup status§7.");
+            }
+            return true;
+        };
+        for (String name : getDescription().getCommands().keySet()) {
+            if (!name.equals("bvsetup")) register(name, notReady);
+        }
     }
 
     private void register(String name, CommandExecutor executor) {

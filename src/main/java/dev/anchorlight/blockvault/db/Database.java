@@ -218,6 +218,9 @@ public final class Database {
     private void syncChapterDates(Connection c) throws SQLException {
         var section = plugin.getConfig().getConfigurationSection("chapters");
         if (section == null) return;
+        java.time.ZoneId zone = plugin.zone();
+        java.time.format.DateTimeFormatter fmt =
+                java.time.format.DateTimeFormatter.ofPattern("EEE d MMM yyyy, HH:mm z", java.util.Locale.ENGLISH);
         try (PreparedStatement ps = c.prepareStatement(
                 "UPDATE bv_chapter SET opens_at = ? "
                 + "WHERE chapter = ? AND edition = ? AND opened_at IS NULL")) {
@@ -226,8 +229,12 @@ public final class Database {
                 if (raw == null || raw.isBlank()) continue;
                 java.sql.Timestamp ts;
                 try {
-                    ts = java.sql.Timestamp.valueOf(
-                            java.time.LocalDateTime.parse(raw));
+                    // Wall-clock time in the configured zone -> an exact instant, so the
+                    // drop happens at that local time whatever zone the host runs in.
+                    var when = java.time.LocalDateTime.parse(raw).atZone(zone);
+                    ts = java.sql.Timestamp.from(when.toInstant());
+                    plugin.getLogger().info("Floor " + key + (key.equals("1") ? " (opens with /bvstart) date: " : " drops ")
+                            + fmt.format(when) + " (" + zone.getId() + ")");
                 } catch (Exception e) {
                     plugin.getLogger().warning("chapters." + key
                             + ".opens-at is not a valid ISO date-time: " + raw);

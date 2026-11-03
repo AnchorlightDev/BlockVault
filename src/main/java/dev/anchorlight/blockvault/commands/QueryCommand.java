@@ -64,7 +64,7 @@ public final class QueryCommand implements CommandExecutor, TabCompleter {
             plugin.tell(sender, "§c'" + key + "' is not part of this collection.");
             return null;
         }
-        if (!canSee(sender, e.chapter())) {
+        if (!canSee(sender, e)) {
             plugin.tell(sender, "§7That block lives on a floor that hasn't opened yet.");
             return null;
         }
@@ -76,6 +76,24 @@ public final class QueryCommand implements CommandExecutor, TabCompleter {
         return plugin.chapters().isOpen(chapter) || sender.hasPermission("blockvault.spoilers");
     }
 
+    /**
+     * A block can be looked up if its floor is open - or if it's already been
+     * donated: the donation chest accepts blocks for sealed floors, so the donor
+     * already knows it counts. Those get a {@link #sealed} view with no floor,
+     * room, section or coordinates.
+     */
+    private boolean canSee(CommandSender sender, TargetEntry e) {
+        return canSee(sender, e.chapter()) || plugin.database().isCollected(e.material());
+    }
+
+    /** True when this sender may know the block but not where it lives yet. */
+    private boolean sealed(CommandSender sender, TargetEntry e) {
+        return !canSee(sender, e.chapter());
+    }
+
+    private static final String SEALED_NOTE =
+            "§7  It goes on a floor that hasn't opened yet - you'll see it on display when that floor opens.";
+
     private String pretty(TargetEntry e) {
         Material m = Material.matchMaterial(e.material());
         return m != null ? VaultUtil.formatMaterialName(m) : e.material();
@@ -84,6 +102,11 @@ public final class QueryCommand implements CommandExecutor, TabCompleter {
     private void find(CommandSender sender, String[] args) {
         TargetEntry e = require(sender, args);
         if (e == null) return;
+        if (sealed(sender, e)) {
+            plugin.tell(sender, "§6" + pretty(e) + " §a✔ donated");
+            plugin.tell(sender, SEALED_NOTE);
+            return;
+        }
         int[] s = e.head();
         org.bukkit.Location loc = plugin.resolve(e.head());
         String room = roomFor(e.chapter());
@@ -98,9 +121,13 @@ public final class QueryCommand implements CommandExecutor, TabCompleter {
         if (e == null) return;
         int pts = plugin.getConfig().getInt("points." + e.rarity(), 1);
         boolean have = plugin.database().isCollected(e.material());
+        boolean sealed = sealed(sender, e);
         plugin.tell(sender, "§6" + pretty(e));
-        plugin.tell(sender, "§7  rarity §f" + e.rarity() + " §7· points §f" + pts
-                + " §7· chapter §f" + e.chapter() + " §7· section §f" + e.section());
+        plugin.tell(sender, sealed
+                ? "§7  rarity §f" + e.rarity() + " §7· points §f" + pts
+                : "§7  rarity §f" + e.rarity() + " §7· points §f" + pts
+                  + " §7· chapter §f" + e.chapter() + " §7· section §f" + e.section());
+        if (sealed) plugin.tell(sender, SEALED_NOTE);
         if (!have) {
             plugin.tell(sender, "§e  still needed §7- the first donor earns " + pts + " points");
             return;
@@ -249,7 +276,7 @@ public final class QueryCommand implements CommandExecutor, TabCompleter {
         String prefix = args[0].toLowerCase();
         List<String> out = new ArrayList<>();
         for (String m : plugin.manifest().entries().keySet()) {
-            if (m.startsWith(prefix) && canSee(sender, plugin.manifest().entry(m).chapter())) out.add(m);
+            if (m.startsWith(prefix) && canSee(sender, plugin.manifest().entry(m))) out.add(m);
             if (out.size() >= 50) break;
         }
         return out;

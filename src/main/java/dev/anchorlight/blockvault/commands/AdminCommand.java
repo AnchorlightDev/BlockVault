@@ -60,7 +60,11 @@ public final class AdminCommand implements CommandExecutor, TabCompleter {
                     return;
                 }
                 // Every tally for the block is gone, so the niche goes back to a plain head.
-                new VaultUtil(plugin).applyNiche(entry, null);
+                VaultUtil vu = new VaultUtil(plugin);
+                vu.applyNiche(entry, null);
+                if (plugin.originWorld() != null) {
+                    vu.applyLabel(plugin.originWorld(), entry, plugin.chapters().isOpen(entry.chapter()), null);
+                }
                 plugin.displays().refresh();
                 plugin.chapters().check();
                 String who = plugin.getServer().getOfflinePlayer(r.donor()).getName();

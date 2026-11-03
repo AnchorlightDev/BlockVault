@@ -57,8 +57,8 @@ public class VaultUtil {
 
     /** Item centre: this far below the head block's base (block below spans 0..-1). */
     private static final double ITEM_Y = -0.38;
-    /** Item sits this far out from the wall face (it turns to face the viewer). */
-    private static final double ITEM_OUT = 0.25;
+    /** Item sits this far out from the wall face - just enough that it never clips as it turns. */
+    private static final double ITEM_OUT = 0.15;
     /** Label baseline: near the bottom of the block below the head. */
     private static final double LABEL_Y = -0.95;
     /** Label sits just proud of the wall face so it doesn't z-fight. */
@@ -114,9 +114,10 @@ public class VaultUtil {
                 int heads = 0, items = sweepStray(world);
                 for (TargetEntry entry : plugin.manifest().entries().values()) {
                     boolean open = plugin.chapters().isOpen(entry.chapter());
-                    if (applyNiche(entry, open ? top.get(entry.material()) : null)) heads++;
+                    Database.TopDonor donor = open ? top.get(entry.material()) : null;
+                    if (applyNiche(entry, donor)) heads++;
                     if (applyItem(world, entry, open)) items++;
-                    if (applyLabel(world, entry, open)) items++;
+                    if (applyLabel(world, entry, open, donor)) items++;
                 }
                 // Reserved (other-edition) and spare niches: plain heads, no item.
                 for (TargetEntry entry : plugin.manifest().reserved()) {
@@ -171,10 +172,13 @@ public class VaultUtil {
     }
 
     /**
-     * Spawn (open floor) or remove (locked floor) the name label below one niche
-     * head. Returns true if anything changed. Main thread.
+     * Spawn (open floor) or remove (locked floor) the label below one niche head:
+     * the block's name, then either "be the first" or the top donor and the
+     * amount to beat. Returns true if anything changed. Main thread.
+     *
+     * @param top the block's top donor, or null if nobody has given it yet
      */
-    public boolean applyLabel(World world, TargetEntry entry, boolean open) {
+    public boolean applyLabel(World world, TargetEntry entry, boolean open, Database.TopDonor top) {
         Location at = labelLocation(entry.head(), entry.face());
         TextDisplay existing = findLabel(world, at, entry.material());
         boolean show = open && plugin.getConfig().getBoolean("display.label", true);
@@ -183,7 +187,7 @@ public class VaultUtil {
             existing.remove();
             return true;
         }
-        String text = labelText(entry.material());
+        String text = labelText(entry.material()) + "\n" + statusText(top);
         if (existing != null) {
             if (text.equals(existing.getText())) return false;
             existing.setText(text);
@@ -191,6 +195,12 @@ public class VaultUtil {
         }
         spawnLabel(at, entry.material(), text, labelKey);
         return true;
+    }
+
+    /** Second part of a niche label: who holds it and what to beat, or an invitation. */
+    public static String statusText(Database.TopDonor top) {
+        if (top == null) return "§7No one yet —\n§ebe the first!";
+        return "§7Top: §e" + top.name() + "\n§7To beat: §f" + top.quantity();
     }
 
     /** "cut_sandstone" -> "Cut Sandstone", white. */
@@ -210,19 +220,31 @@ public class VaultUtil {
      * (out of the wall).
      */
     public Location itemLocation(int[] headRel, boolean wall, BlockFace facing) {
-        double out = 0.5 + ITEM_OUT;
+        double out = faceOut(headRel) + ITEM_OUT;
         return plugin.resolve(headRel).add(
                 0.5 + facing.getModX() * out, ITEM_Y, 0.5 + facing.getModZ() * out);
     }
 
     /** Where a niche's name label sits: flat on the lower part of the block below the head. */
     public Location labelLocation(int[] headRel, BlockFace facing) {
-        double out = 0.5 + LABEL_OUT;
+        double out = faceOut(headRel) + LABEL_OUT;
         Location at = plugin.resolve(headRel).add(
                 0.5 + facing.getModX() * out, LABEL_Y, 0.5 + facing.getModZ() * out);
         // Face out of the wall, like a sign.
         at.setDirection(new org.bukkit.util.Vector(facing.getModX(), 0, facing.getModZ()));
         return at;
+    }
+
+    /**
+     * How far the wall face under a head is from the head block's centre, along
+     * its facing. Normally the wall under a head is flush with the wall the head
+     * hangs on (the back of the head's block, -0.5). If the block directly below
+     * the head is solid, the wall steps forward and its face is at +0.5.
+     */
+    private double faceOut(int[] headRel) {
+        Location below = plugin.resolve(headRel).add(0, -1, 0);
+        if (below.getWorld() != null && below.getBlock().getType().isOccluding()) return 0.5;
+        return -0.5;
     }
 
     /** Spawn a tagged name label flat against the wall. Also used by the /bvsetup preview. */

@@ -43,13 +43,15 @@ public final class Manifest {
     private final Map<Integer, List<HeadSlot>> floorLeaders;
     private final Map<String, int[]> leader;
     private final Map<Integer, int[]> seals;
+    private final Map<String, int[]> holograms;
     private final int[] min;
     private final int[] max;
 
     private Manifest(String version, int dataVersion, Map<String, TargetEntry> entries,
                      List<TargetEntry> reserved, List<HeadSlot> spares,
                      Map<Integer, List<HeadSlot>> floorLeaders,
-                     Map<String, int[]> leader, Map<Integer, int[]> seals) {
+                     Map<String, int[]> leader, Map<Integer, int[]> seals,
+                     Map<String, int[]> holograms) {
         this.version = version;
         this.dataVersion = dataVersion;
         this.entries = entries;
@@ -58,6 +60,7 @@ public final class Manifest {
         this.floorLeaders = floorLeaders;
         this.leader = leader;
         this.seals = seals;
+        this.holograms = holograms;
 
         int[] lo = {Integer.MAX_VALUE, Integer.MAX_VALUE, Integer.MAX_VALUE};
         int[] hi = {Integer.MIN_VALUE, Integer.MIN_VALUE, Integer.MIN_VALUE};
@@ -100,6 +103,11 @@ public final class Manifest {
     public Map<Integer, List<HeadSlot>> floorLeaders() { return floorLeaders; }
     public int[] leader(String key) { return leader.get(key); }
     public int[] seal(int chapter) { return seals.get(chapter); }
+    /**
+     * Block a hologram floats above: {@code "2"}..{@code "6"} for a floor's
+     * "locked" sign, {@code "info"} for the how-it-works board. Null if unset.
+     */
+    public int[] hologram(String key) { return holograms.get(key); }
 
     /** True if the file exists in the data folder or the jar. */
     public static boolean exists(Path dataFolderFile, ClassLoader loader) {
@@ -179,7 +187,13 @@ public final class Manifest {
             for (String k : so.keySet()) seals.put(Integer.parseInt(k), gson.fromJson(so.get(k), int[].class));
         }
 
-        return new Manifest(version, dataVersion, entries, reserved, spares, floorLeaders, leader, seals);
+        Map<String, int[]> holograms = new LinkedHashMap<>();
+        if (root.has("holograms")) {
+            JsonObject ho = root.getAsJsonObject("holograms");
+            for (String k : ho.keySet()) holograms.put(k, gson.fromJson(ho.get(k), int[].class));
+        }
+
+        return new Manifest(version, dataVersion, entries, reserved, spares, floorLeaders, leader, seals, holograms);
     }
 
     private static HeadSlot slot(JsonObject o) {

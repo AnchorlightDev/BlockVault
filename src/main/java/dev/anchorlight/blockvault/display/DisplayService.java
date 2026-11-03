@@ -20,7 +20,9 @@ import java.util.List;
 /**
  * The vanilla display layer: the lobby leader panel (head + flanking signs), a
  * {@link TextDisplay} hologram with the standings, and each floor's standing
- * leader heads (#1, #2, ... by items given to that floor) with a name label.
+ * leader heads (#1, #2, ... by items given to that floor) with a name label,
+ * a "locked" sign over each floor that hasn't opened yet (date + countdown,
+ * never the floor's name), and an optional how-it-works board.
  * No third-party dependency - TextDisplay is vanilla since 1.19.4.
  */
 public final class DisplayService {
@@ -33,6 +35,31 @@ public final class DisplayService {
         this.plugin = plugin;
         this.tagKey = new org.bukkit.NamespacedKey(plugin, "hologram");
         this.floorKey = new org.bukkit.NamespacedKey(plugin, "floor_leader");
+        this.boardKey = boardKey(plugin);
+    }
+
+    private final org.bukkit.NamespacedKey boardKey;
+
+    /** Tag on the locked-floor signs ("2".."6") and the how-it-works board ("info"). */
+    private static org.bukkit.NamespacedKey boardKey(org.bukkit.plugin.Plugin plugin) {
+        return new org.bukkit.NamespacedKey(plugin, "board");
+    }
+
+    /** Where a board floats: centred over the top of its block. */
+    private static Location boardAt(Location block) {
+        return block.clone().add(0.5, 1.15, 0.5);
+    }
+
+    /** Remove a board spawned above {@code block} - used by /bvsetup when one is moved. */
+    public static void removeBoard(org.bukkit.plugin.Plugin plugin, Location block, String key) {
+        if (block.getWorld() == null || !block.isChunkLoaded()) return;
+        var k = boardKey(plugin);
+        for (var e : block.getWorld().getNearbyEntities(boardAt(block), 1, 2, 1)) {
+            if (e instanceof TextDisplay td
+                    && key.equals(td.getPersistentDataContainer().get(k, PersistentDataType.STRING))) {
+                td.remove();
+            }
+        }
     }
 
     private final org.bukkit.NamespacedKey floorKey;
@@ -59,10 +86,13 @@ public final class DisplayService {
                 List<Database.TopDonor> rows = plugin.database().floorLeaders(e.getKey(), e.getValue().size());
                 if (rows != null) floors.put(e.getKey(), rows); // null = DB error: leave heads as they are
             }
+            List<Database.ChapterRow> chapters = plugin.database().chapters();
             plugin.getServer().getScheduler().runTask(plugin, () -> {
                 updateLeaderPanel(top.isEmpty() ? null : top.get(0));
                 updateHologram(top, done, total);
                 floors.forEach(this::updateFloorLeaders);
+                updateLockedSigns(chapters);
+                updateInfoBoard(done, total);
             });
         });
     }
@@ -171,6 +201,110 @@ public final class DisplayService {
             }
             if (!text.equals(label.getText())) label.setText(text);
         }
+    }
+
+    // ------------------------------------------------------------ locked floors
+
+    private static final java.time.format.DateTimeFormatter DROP_FMT =
+            java.time.format.DateTimeFormatter.ofPattern("EEE d MMM, h:mm a", java.util.Locale.ENGLISH);
+
+    /**
+     * A sign over each floor that hasn't opened: floor number, drop date (in the
+     * configured timezone) and a countdown. The floor's name is never sent - not
+     * even obfuscated, since §k text still reaches the client in full. Removed the
+     * moment the floor opens (unlock() calls refresh()).
+     */
+    private void updateLockedSigns(List<Database.ChapterRow> chapters) {
+        if (chapters.isEmpty()) return; // DB error: leave signs as they are
+        long now = System.currentTimeMillis();
+        for (Database.ChapterRow row : chapters) {
+            int ch = row.chapter();
+            String key = String.valueOf(ch);
+            int[] rel = plugin.manifest().hologram(key);
+            if (rel == null || ch < 2) continue;
+            Location block = plugin.resolve(rel);
+            if (block.getWorld() == null || !block.isChunkLoaded()) continue;
+
+            if (plugin.chapters().isOpen(ch)) {
+                removeBoard(plugin, block, key);
+                continue;
+            }
+
+            StringBuilder text = new StringBuilder("§c§lFloor ").append(ch).append(" §8· §7Sealed\n§8???\n");
+            if (row.opensAt() == null) {
+                text.append("\n§7Opening date to be announced");
+            } else {
+                long ms = row.opensAt().getTime() - now;
+                var when = row.opensAt().toInstant().atZone(plugin.zone());
+                text.append("\n§7Opens §e").append(DROP_FMT.format(when));
+                if (ms > 0) text.append("\n§7in §f").append(countdown(ms));
+                else text.append("\n§eOpening soon");
+            }
+            upsertBoard(block, key, text.toString(), 1.0f);
+        }
+    }
+
+    private static String countdown(long ms) {
+        long mins = Math.max(1, ms / 60_000L);
+        long d = mins / 1440, h = (mins % 1440) / 60, m = mins % 60;
+        if (d > 0) return d + "d " + h + "h";
+        if (h > 0) return h + "h " + m + "m";
+        return m + "m";
+    }
+
+    // ------------------------------------------------------------ info board
+
+    /** The how-it-works board, from {@code info-board.lines} in config. */
+    private void updateInfoBoard(int done, int total) {
+        int[] rel = plugin.manifest().hologram("info");
+        if (rel == null) return;
+        Location block = plugin.resolve(rel);
+        if (block.getWorld() == null || !block.isChunkLoaded()) return;
+        var cfg = plugin.getConfig();
+        if (!cfg.getBoolean("info-board.enabled", true)) {
+            removeBoard(plugin, block, "info");
+            return;
+        }
+        List<String> lines = cfg.getStringList("info-board.lines");
+        if (lines.isEmpty()) return;
+        String text = String.join("\n", lines)
+                .replace("{done}", String.valueOf(done))
+                .replace("{total}", String.valueOf(total))
+                .replace("{percent}", String.valueOf(total == 0 ? 0 : Math.round(100.0 * done / total)))
+                .replace("{floor}", String.valueOf(plugin.chapters().current()))
+                .replace("{common}", String.valueOf(cfg.getInt("points.common", 1)))
+                .replace("{uncommon}", String.valueOf(cfg.getInt("points.uncommon", 5)))
+                .replace("{rare}", String.valueOf(cfg.getInt("points.rare", 10)));
+        text = org.bukkit.ChatColor.translateAlternateColorCodes('&', text);
+        upsertBoard(block, "info", text, (float) cfg.getDouble("info-board.scale", 1.0));
+    }
+
+    /** Find-or-spawn the tagged board above {@code block} and set its text. */
+    private void upsertBoard(Location block, String key, String text, float scale) {
+        Location at = boardAt(block);
+        TextDisplay board = null;
+        for (var e : at.getWorld().getNearbyEntities(at, 1, 2, 1)) {
+            if (e instanceof TextDisplay td
+                    && key.equals(td.getPersistentDataContainer().get(boardKey, PersistentDataType.STRING))) {
+                if (board == null) board = td; else td.remove(); // de-dupe
+            }
+        }
+        if (board == null) {
+            board = at.getWorld().spawn(at, TextDisplay.class, d -> {
+                d.getPersistentDataContainer().set(boardKey, PersistentDataType.STRING, key);
+                d.setBillboard(Display.Billboard.CENTER);
+                d.setAlignment(TextDisplay.TextAlignment.CENTER);
+                d.setLineWidth(240);
+                d.setShadowed(true);
+            });
+        }
+        var t = board.getTransformation();
+        if (t.getScale().x() != scale) {
+            board.setTransformation(new org.bukkit.util.Transformation(
+                    t.getTranslation(), t.getLeftRotation(),
+                    new org.joml.Vector3f(scale, scale, scale), t.getRightRotation()));
+        }
+        if (!text.equals(board.getText())) board.setText(text);
     }
 
     private TextDisplay findTagged(Location near, org.bukkit.NamespacedKey key, String tag) {

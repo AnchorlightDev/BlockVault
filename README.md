@@ -40,10 +40,19 @@ below 26.3 so the build can't pick up a newer API.
                               (or stand on each corner: /bvsetup pos1 / pos2)
    /bvsetup floor 1           scan + preview each block and its name
    /bvsetup confirm           (or /bvsetup cancel)
-   /bvsetup seal 2            looking at floor 2's iron-bar seal (repeat 2-6)
+   /bvsetup seal 2            optional: a block removed when floor 2 opens (2-6)
    /bvsetup lobby             looking at the lobby leader head (optional)
+   /bvsetup hologram 2        looking at a block: floor 2's "locked" sign floats
+                              above it until it opens (2-6, optional)
+   /bvsetup hologram info     looking at a block: the how-it-works board
+                              (text in config.yml under info-board)
    /bvsetup status            check every floor is done
    ```
+   Each floor's corners are saved to `plugins/BlockVault/floor_bounds.yml` on
+   confirm. After that, `/bvsetup floor <n>` with no new selection reuses them,
+   and `/bvsetup rescan` re-scans and saves every floor listed there in one go.
+   You can also type the corners into that file by hand (world block coordinates).
+   `/bvsetup corners [n]` lists them in chat - click a corner to copy it.
    Wall heads in the selection are **niches**. They're ordered clockwise from
    north around the floor's centre, top to bottom, and given blocks from
    `floor_assignment.tsv` in list order, so each section fills a continuous run
@@ -55,7 +64,7 @@ below 26.3 so the build can't pick up a newer API.
    (re-seeded on every start until the first donation) and runs validation.
 6. `/bvstart` opens the event. The layout is frozen from then on. The open/closed
    state is stored in the database (`bv_state`), not `config.yml`. No floor opens
-   — by date or by 90% — until `/bvstart`; at that point any floor whose `opens-at`
+   until `/bvstart`; at that point any floor whose `opens-at`
    has already passed opens immediately, so use future dates on a test server.
 
 `floor_assignment.tsv` (tab-separated `block chapter rarity section edition`)
@@ -72,9 +81,12 @@ heads, no item, not counted in the season total.
 - **Submissions are transactional.** Order is always write → confirm commit →
   consume. If the database is unreachable the items stay in the player's hand.
   `bv_submission.material` is the primary key, so the database decides who was
-  first and simultaneous donors race safely. `/bvsubmit` gives the whole held
-  stack; `/bvsubmit <n>` gives part of it. Container items with contents are
+  first and simultaneous donors race safely. Container items with contents are
   refused.
+- **Donation chest.** `/bvsubmit` opens a chest menu: drop in anything and close
+  it. Items the vault doesn't collect come straight back; the rest are recorded
+  one block type at a time, and any type whose write fails is returned too.
+  `/bvsubmit hand [n]` (or `/bvsubmit <n>`) still donates the held stack.
 - **Niches are heads + the block and its name.** On open floors the block is
   shown as a small item on the face of the block directly below each niche head,
   with its name underneath (`display.label` / `label-scale` in config). Locked floors show plain
@@ -85,9 +97,10 @@ heads, no item, not counted in the season total.
   items given to that floor's blocks, with a #rank / name / count label.
 - `/bvupdatestate` reconciles the world against the database and only ever
   writes niche head skins and item displays — never structure.
-- **Chapters** open on their scheduled date *or* at 90% of the previous chapter,
-  whichever comes first. Earlier chapters never close. Unlock breaks one
-  `iron_bars` seal and runs a broadcast/title/fireworks/BossBar ceremony.
+- **Chapters** open on their scheduled date. Optionally (`early-open-percent`,
+  off by default) a floor can open early once the floor below reaches that
+  percentage. Earlier chapters never close. Unlock removes the
+  floor's seal block, if one was recorded, and runs a broadcast/title/fireworks/BossBar ceremony.
 - **The target list is frozen per `edition`.** New blocks go in as a new edition,
   never the running one.
 
@@ -95,9 +108,8 @@ heads, no item, not counted in the season total.
 
 The season runs across six themed floors, one per chapter, numbered from the
 bottom up: Floor 1 (The Undercroft) is the lowest level and Floor 6 (The
-Observatory) is the top. Each floor's seal is the iron bars on the way up into it. Each unlocks on its
-scheduled date or when the previous chapter reaches 90%, whichever comes first;
-earlier floors never close. Completing a floor (100%) is announced in chat and
+Observatory) is the top. Each is released on its scheduled date (the
+`chapters:` block in config) and earlier floors never close. Completing a floor (100%) is announced in chat and
 on the Discord webhook.
 
 | # | Floor | Chapter | Opens |
@@ -118,7 +130,7 @@ query commands hide them unless the sender has `blockvault.spoilers`.
 
 | Command | Permission | Purpose |
 |---|---|---|
-| `/bvsubmit [amount]` | `blockvault.submit` | Donate the held block — whole stack by default (in-region, no creative) |
+| `/bvsubmit` / `/bvsubmit hand [n]` | `blockvault.submit` | Donation chest, or the held block (in-region, no creative) |
 | `/bvprogress` | `blockvault.progress` | Current-chapter bar + overall bar |
 | `/bvleaderboard [month]` | `blockvault.leaderboard` | Top 10 all-time, or this month |
 | `/bvfind <block>` | `blockvault.find` | Level, room, shelf coordinates |

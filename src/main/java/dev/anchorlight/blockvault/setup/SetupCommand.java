@@ -18,6 +18,7 @@ import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
 import org.bukkit.block.data.Directional;
 import org.bukkit.block.data.Rotatable;
+import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
@@ -34,9 +35,14 @@ import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
+import net.md_5.bungee.api.chat.ClickEvent;
+import net.md_5.bungee.api.chat.HoverEvent;
+import net.md_5.bungee.api.chat.TextComponent;
+import net.md_5.bungee.api.chat.hover.content.Text;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.persistence.PersistentDataType;
 
+import java.io.File;
 import java.io.IOException;
 import java.io.Reader;
 import java.nio.charset.StandardCharsets;
@@ -59,10 +65,15 @@ import java.util.UUID;
  * <pre>
  *   /bvsetup wand                setup wand: left-click a block = pos1, right-click = pos2
  *   /bvsetup pos1 | pos2         corners of one floor (your feet position)
- *   /bvsetup floor &lt;1-6&gt;       scan, assign and preview that floor
+ *   /bvsetup floor &lt;1-6&gt;       scan, assign and preview that floor (uses the saved
+ *                                corners from floor_bounds.yml if you haven't selected any)
+ *   /bvsetup rescan              scan and save every floor in floor_bounds.yml in one go
+ *   /bvsetup corners [n]         show saved corners (click to copy)
  *   /bvsetup confirm | cancel    save or discard the preview
- *   /bvsetup seal &lt;2-6&gt;        record the iron-bar seal you're looking at
+ *   /bvsetup seal &lt;2-6&gt;        optional: a block removed when that floor opens
  *   /bvsetup lobby [head|name|count|title]   record the lobby leader panel
+ *   /bvsetup hologram &lt;2-6|info&gt;  a block a hologram floats above: a floor's
+ *                                "locked" sign, or the how-it-works board
  *   /bvsetup status              what's been recorded so far
  * </pre>
  *
@@ -82,7 +93,10 @@ public final class SetupCommand implements CommandExecutor, TabCompleter, Listen
     private record Niche(int[] abs, boolean wall, String facing) {}
     private record Placement(Assignment.Row row, Niche niche) {}
     private record Pending(int chapter, List<Placement> placed, List<Niche> spares,
-                           List<Niche> leaders, List<Entity> preview) {}
+                           List<Niche> leaders, List<Entity> preview, Location[] bounds) {}
+
+    /** Each floor's selection corners, saved on confirm so a floor never needs reselecting. */
+    private static final String BOUNDS_FILE = "floor_bounds.yml";
 
     private final BlockVault plugin;
     private final VaultUtil vaultUtil;
@@ -113,6 +127,10 @@ public final class SetupCommand implements CommandExecutor, TabCompleter, Listen
             status(sender);
             return true;
         }
+        if (sub.equals("corners")) { // read-only, so allowed any time
+            corners(sender, args.length > 1 ? parseInt(args[1]) : -1);
+            return true;
+        }
         if (!(sender instanceof Player player)) {
             plugin.tell(sender, "§cOnly players can run that - it uses where you're standing or looking.");
             return true;
@@ -128,10 +146,12 @@ public final class SetupCommand implements CommandExecutor, TabCompleter, Listen
             case "pos1" -> setPos(player, 0, player.getLocation());
             case "pos2" -> setPos(player, 1, player.getLocation());
             case "floor" -> floor(player, args);
+            case "rescan" -> rescan(player);
             case "confirm" -> confirm(player);
             case "cancel" -> cancel(player, true);
             case "seal" -> seal(player, args);
             case "lobby" -> lobby(player, args);
+            case "hologram" -> hologram(player, args);
             default -> help(player);
         }
         return true;
@@ -141,11 +161,15 @@ public final class SetupCommand implements CommandExecutor, TabCompleter, Listen
         plugin.tell(s, "§6Vault setup");
         s.sendMessage("§7 1. §f/bvsetup wand§7, then left-click one corner block and right-click the opposite one");
         s.sendMessage("§7    (or stand on each corner: §f/bvsetup pos1§7 / §f/bvsetup pos2§7)");
+        s.sendMessage("§7    Corners are saved to " + BOUNDS_FILE + " on confirm - next time just §f/bvsetup floor <n>");
+        s.sendMessage("§7    or §f/bvsetup rescan §7to redo every saved floor at once. §f/bvsetup corners §7to copy them.");
         s.sendMessage("§7 2. §f/bvsetup floor <1-6> §7- scans and previews each block and its name under its head");
         s.sendMessage("§7 3. §f/bvsetup confirm §7(or §f/bvsetup cancel§7)");
-        s.sendMessage("§7 4. Look at each iron-bar seal: §f/bvsetup seal <2-6>");
+        s.sendMessage("§7 4. §8(optional) §7a block to remove when a floor opens: §f/bvsetup seal <2-6>");
         s.sendMessage("§7 5. Look at the lobby leader head: §f/bvsetup lobby");
-        s.sendMessage("§7 6. §f/bvsetup status§7, then restart the server");
+        s.sendMessage("§7 6. §8(optional) §7look at the block a hologram should float above:");
+        s.sendMessage("§7    §f/bvsetup hologram <2-6> §7(locked-floor sign) or §f/bvsetup hologram info §7(how it works)");
+        s.sendMessage("§7 7. §f/bvsetup status§7, then restart the server");
     }
 
     // ------------------------------------------------------------------ selection
@@ -226,10 +250,20 @@ public final class SetupCommand implements CommandExecutor, TabCompleter, Listen
             return;
         }
         Location[] sel = selections.get(p.getUniqueId());
-        if (sel == null || sel[0] == null || sel[1] == null) {
-            plugin.tell(p, "§cSet both corners first: /bvsetup pos1 and /bvsetup pos2");
-            return;
+        boolean fresh = sel != null && sel[0] != null && sel[1] != null;
+        if (!fresh) {
+            sel = loadBounds(chapter);
+            if (sel == null) {
+                plugin.tell(p, "§cSelect the floor first (§f/bvsetup wand§c), or add floor "
+                        + chapter + " to " + BOUNDS_FILE + ".");
+                return;
+            }
+            plugin.tell(p, "§7Using floor " + chapter + "'s saved corners from " + BOUNDS_FILE + ".");
         }
+        floorScan(p, chapter, sel);
+    }
+
+    private void floorScan(Player p, int chapter, Location[] sel) {
         World world = sel[0].getWorld();
         if (world == null || !world.equals(sel[1].getWorld())) {
             plugin.tell(p, "§cBoth corners must be in the same world.");
@@ -306,7 +340,8 @@ public final class SetupCommand implements CommandExecutor, TabCompleter, Listen
         List<Niche> spares = new ArrayList<>(niches.subList(rows.size(), niches.size()));
 
         List<Entity> preview = spawnPreview(world, placed, spares, leaders);
-        pending.put(p.getUniqueId(), new Pending(chapter, placed, spares, leaders, preview));
+        pending.put(p.getUniqueId(), new Pending(chapter, placed, spares, leaders, preview,
+                new Location[]{sel[0].clone(), sel[1].clone()}));
 
         plugin.tell(p, "§6Floor " + chapter + " preview: §f" + niches.size() + " §7wall heads, §f"
                 + rows.size() + " §7blocks, §f" + spares.size() + " §7spare, §f" + leaders.size()
@@ -346,7 +381,8 @@ public final class SetupCommand implements CommandExecutor, TabCompleter, Listen
                 var d = vaultUtil.spawnItem(at, "preview", new ItemStack(m), previewKey);
                 d.setPersistent(false);
                 out.add(d);
-                var l = vaultUtil.spawnLabel(nameAt, "preview", VaultUtil.labelText(pl.row().block()), previewKey);
+                var l = vaultUtil.spawnLabel(nameAt, "preview",
+                        VaultUtil.labelText(pl.row().block()) + "\n" + VaultUtil.statusText(null), previewKey);
                 l.setPersistent(false);
                 out.add(l);
             } else {
@@ -435,9 +471,112 @@ public final class SetupCommand implements CommandExecutor, TabCompleter, Listen
 
         if (!writeLayout(p, root)) return;
         cancel(p, false);
+        saveBounds(p, chapter, pend.bounds());
+        // Next /bvsetup floor uses a new selection if you make one, else that floor's saved corners.
+        selections.remove(p.getUniqueId());
         plugin.tell(p, "§aFloor " + chapter + " saved: " + pend.placed().size() + " blocks, "
                 + pend.spares().size() + " spare, " + pend.leaders().size() + " leader pedestals.");
-        plugin.tell(p, "§7Restart the server once every floor, seal and the lobby are done. §f/bvsetup status");
+        corners(p, chapter);
+        plugin.tell(p, "§7Restart the server once every floor (and the lobby, if you use it) is done. §f/bvsetup status");
+    }
+
+    /** Scan and save every floor that has saved corners, without previews. */
+    private void rescan(Player p) {
+        cancel(p, false);
+        int done = 0;
+        for (int ch = 1; ch <= 6; ch++) {
+            Location[] b = loadBounds(ch);
+            if (b == null) continue;
+            floorScan(p, ch, b);
+            Pending pend = pending.get(p.getUniqueId());
+            if (pend == null || pend.chapter() != ch) {
+                plugin.tell(p, "§cRescan stopped at floor " + ch + " - see above. Earlier floors were saved.");
+                return;
+            }
+            confirm(p);
+            done++;
+        }
+        plugin.tell(p, done == 0 ? "§cNo floors in " + BOUNDS_FILE + " yet - set one up with the wand first."
+                                 : "§aRescanned " + done + " floor(s). §f/bvsetup status");
+    }
+
+    // ------------------------------------------------------------------ saved corners
+
+    /** List saved corners (one floor, or all if {@code only} is -1). Click to copy in game. */
+    private void corners(CommandSender s, int only) {
+        boolean player = s instanceof Player;
+        if (only == -1) {
+            plugin.tell(s, "§6Saved floor corners §7(" + BOUNDS_FILE + ")" + (player ? " §8- click to copy" : ""));
+        }
+        boolean any = false;
+        for (int ch = 1; ch <= 6; ch++) {
+            if (only != -1 && ch != only) continue;
+            Location[] b = loadBounds(ch);
+            if (b == null) {
+                if (only != -1) s.sendMessage("§7  Floor " + ch + ": §cno corners saved");
+                continue;
+            }
+            any = true;
+            String p1 = xyz(b[0]), p2 = xyz(b[1]);
+            if (s instanceof Player p) {
+                TextComponent line = new TextComponent(TextComponent.fromLegacyText("§7  Floor " + ch + " corners: "));
+                line.addExtra(copyable("§f" + p1, p1, "Copy pos1"));
+                line.addExtra(new TextComponent(TextComponent.fromLegacyText(" §7→ ")));
+                line.addExtra(copyable("§f" + p2, p2, "Copy pos2"));
+                line.addExtra(new TextComponent(" "));
+                line.addExtra(copyable("§b[copy both]", p1 + " " + p2, "Copy both corners"));
+                p.spigot().sendMessage(line);
+            } else {
+                s.sendMessage("  Floor " + ch + " corners: " + p1 + " -> " + p2);
+            }
+        }
+        if (!any && only == -1) s.sendMessage("§7  None yet - they're saved when you /bvsetup confirm a floor.");
+    }
+
+    private static String xyz(Location l) {
+        return l.getBlockX() + " " + l.getBlockY() + " " + l.getBlockZ();
+    }
+
+    private static TextComponent copyable(String label, String clipboard, String hover) {
+        TextComponent c = new TextComponent(TextComponent.fromLegacyText(label));
+        c.setClickEvent(new ClickEvent(ClickEvent.Action.COPY_TO_CLIPBOARD, clipboard));
+        c.setHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, new Text("§7" + hover + ": §f" + clipboard)));
+        return c;
+    }
+
+    private File boundsFile() {
+        return new File(plugin.getDataFolder(), BOUNDS_FILE);
+    }
+
+    /** A floor's saved corners, or null if it has none (or its world isn't loaded). */
+    private Location[] loadBounds(int chapter) {
+        File f = boundsFile();
+        if (!f.isFile()) return null;
+        YamlConfiguration y = YamlConfiguration.loadConfiguration(f);
+        World w = Bukkit.getWorld(y.getString("world", plugin.getConfig().getString("origin.world", "world")));
+        if (w == null) return null;
+        List<Integer> a = y.getIntegerList("floors." + chapter + ".pos1");
+        List<Integer> b = y.getIntegerList("floors." + chapter + ".pos2");
+        if (a.size() != 3 || b.size() != 3) return null;
+        return new Location[]{new Location(w, a.get(0), a.get(1), a.get(2)),
+                              new Location(w, b.get(0), b.get(1), b.get(2))};
+    }
+
+    private void saveBounds(Player p, int chapter, Location[] sel) {
+        File f = boundsFile();
+        YamlConfiguration y = f.isFile() ? YamlConfiguration.loadConfiguration(f) : new YamlConfiguration();
+        y.options().setHeader(List.of(
+                "Corners of each floor's /bvsetup selection, in world block coordinates.",
+                "Saved on /bvsetup confirm. Edit by hand if you like, then /bvsetup floor <n>",
+                "or /bvsetup rescan to redo every floor listed here."));
+        y.set("world", sel[0].getWorld().getName());
+        y.set("floors." + chapter + ".pos1", List.of(sel[0].getBlockX(), sel[0].getBlockY(), sel[0].getBlockZ()));
+        y.set("floors." + chapter + ".pos2", List.of(sel[1].getBlockX(), sel[1].getBlockY(), sel[1].getBlockZ()));
+        try {
+            y.save(f);
+        } catch (IOException e) {
+            plugin.tell(p, "§eLayout saved, but could not write " + BOUNDS_FILE + ": " + e.getMessage());
+        }
     }
 
     private void seal(Player p, String[] args) {
@@ -483,6 +622,35 @@ public final class SetupCommand implements CommandExecutor, TabCompleter, Listen
         if (writeLayout(p, root)) plugin.tell(p, "§aLobby " + part + " recorded.");
     }
 
+    private void hologram(Player p, String[] args) {
+        String key = args.length > 1 ? args[1].toLowerCase(Locale.ROOT) : "";
+        int chapter = parseInt(key);
+        if (!key.equals("info") && (chapter < 2 || chapter > 6)) {
+            plugin.tell(p, "§cUsage: /bvsetup hologram <2-6|info> §7(while looking at the block it floats above)");
+            return;
+        }
+        Block b = p.getTargetBlockExact(8);
+        if (b == null) {
+            plugin.tell(p, "§cLook at the block the hologram should float above (within 8 blocks).");
+            return;
+        }
+        JsonObject root = readLayout();
+        JsonObject holos = root.getAsJsonObject("holograms");
+        // Moving it: clear the old one so it doesn't linger at the previous spot.
+        if (holos.has(key)) {
+            JsonArray old = holos.getAsJsonArray(key);
+            int[] o = origin();
+            Location at = new Location(b.getWorld(),
+                    o[0] + old.get(0).getAsInt(), o[1] + old.get(1).getAsInt(), o[2] + old.get(2).getAsInt());
+            dev.anchorlight.blockvault.display.DisplayService.removeBoard(plugin, at, key);
+        }
+        holos.add(key, arr(relOf(b, origin())));
+        if (writeLayout(p, root)) {
+            plugin.tell(p, "§a" + (key.equals("info") ? "How-it-works board" : "Locked sign for floor " + key)
+                    + " recorded above " + b.getType().getKey().getKey() + ". §7Restart to show it.");
+        }
+    }
+
     private void status(CommandSender s) {
         JsonObject root = readLayout();
         Map<Integer, int[]> counts = new HashMap<>(); // chapter -> {season, other edition, spare, leaders}
@@ -504,7 +672,7 @@ public final class SetupCommand implements CommandExecutor, TabCompleter, Listen
         plugin.tell(s, "§6Vault layout §7(" + layoutFile().getFileName() + ")");
         for (int ch = 1; ch <= 6; ch++) {
             int[] c = counts.get(ch);
-            String sealTxt = ch == 1 ? "" : seals.has(String.valueOf(ch)) ? " §a· seal ✔" : " §c· seal missing";
+            String sealTxt = seals.has(String.valueOf(ch)) ? " §a· seal ✔" : "";
             s.sendMessage(c == null
                     ? "§7  Floor " + ch + ": §cnot scanned" + sealTxt
                     : "§7  Floor " + ch + ": §f" + c[0] + " §7blocks"
@@ -513,6 +681,13 @@ public final class SetupCommand implements CommandExecutor, TabCompleter, Listen
         }
         s.sendMessage("§7  Lobby leader head: "
                 + (root.getAsJsonObject("leader").has("head") ? "§a✔" : "§eoptional, not set"));
+        JsonObject holos = root.getAsJsonObject("holograms");
+        StringBuilder locked = new StringBuilder();
+        for (int ch = 2; ch <= 6; ch++) {
+            locked.append(holos.has(String.valueOf(ch)) ? "§a" : "§8").append(ch).append(' ');
+        }
+        s.sendMessage("§7  Locked-floor holograms: " + locked.toString().trim()
+                + " §7· How-it-works board: " + (holos.has("info") ? "§a✔" : "§eoptional, not set"));
     }
 
     // ------------------------------------------------------------------ file
@@ -531,7 +706,7 @@ public final class SetupCommand implements CommandExecutor, TabCompleter, Listen
         root.addProperty("version", plugin.getConfig().getString("edition", "26.2"));
         if (!root.has("data_version")) root.addProperty("data_version", dataVersion());
         for (String k : new String[]{"entries", "spares"}) if (!root.has(k)) root.add(k, new JsonArray());
-        for (String k : new String[]{"floor_leaders", "leader", "seals"}) if (!root.has(k)) root.add(k, new JsonObject());
+        for (String k : new String[]{"floor_leaders", "leader", "seals", "holograms"}) if (!root.has(k)) root.add(k, new JsonObject());
         return root;
     }
 
@@ -634,16 +809,17 @@ public final class SetupCommand implements CommandExecutor, TabCompleter, Listen
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
         if (args.length == 1) {
             List<String> out = new ArrayList<>();
-            for (String s : List.of("wand", "pos1", "pos2", "floor", "confirm", "cancel", "seal", "lobby", "status")) {
+            for (String s : List.of("wand", "pos1", "pos2", "floor", "rescan", "corners", "confirm", "cancel", "seal", "lobby", "hologram", "status")) {
                 if (s.startsWith(args[0].toLowerCase(Locale.ROOT))) out.add(s);
             }
             return out;
         }
         if (args.length == 2) {
             return switch (args[0].toLowerCase(Locale.ROOT)) {
-                case "floor" -> List.of("1", "2", "3", "4", "5", "6");
+                case "floor", "corners" -> List.of("1", "2", "3", "4", "5", "6");
                 case "seal" -> List.of("2", "3", "4", "5", "6");
                 case "lobby" -> List.of("head", "name", "count", "title");
+                case "hologram" -> List.of("2", "3", "4", "5", "6", "info");
                 default -> List.of();
             };
         }

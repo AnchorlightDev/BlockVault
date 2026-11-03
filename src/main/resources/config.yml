@@ -12,7 +12,11 @@
 # config-version drives StoneLib's versioned config migration. Do not edit it
 # on a live server. Increment it in the bundled resource only when this file is
 # restructured, and declare the relocations for that bump.
-config-version: 1
+# v2: display.label / display.label-scale added, display.item-offset-y removed.
+# v3: early-open-percent added (floors open on their dates only by default).
+# v4: timezone added.
+# v5: info-board added.
+config-version: 5
 
 edition: '26.2'
 
@@ -63,12 +67,17 @@ points:
   uncommon: 5
   rare: 10
 
+# Timezone the chapter opens-at times below are written in (an IANA zone id).
+# Daylight saving is handled. Blank = the server machine's own timezone.
+timezone: Australia/Sydney
+
 # Scheduled open dates per chapter (ISO local date-time). A chapter opens on
-# this date OR when the previous chapter reaches 90%, whichever comes first.
+# its date (or earlier, if early-open-percent below is set).
 # Re-read every start and applied to any chapter not yet open, so you can adjust
 # a date mid-season. Chapter 1 opens with /bvstart regardless.
 # Nothing opens while the vault is closed; on /bvstart any floor whose date has
 # already passed opens straight away - use future dates on a test server.
+# Each floor's drop time is logged at startup so you can check it.
 chapters:
   '1': { opens-at: '2026-01-01T00:00:00' }
   '2': { opens-at: '2026-02-15T00:00:00' }
@@ -76,6 +85,35 @@ chapters:
   '4': { opens-at: '2026-08-01T00:00:00' }
   '5': { opens-at: '2026-09-15T00:00:00' }
   '6': { opens-at: '2026-12-01T00:00:00' }
+
+# Open a floor early when the floor below reaches this percentage collected.
+# 0 = off: floors open only on their opens-at date.
+early-open-percent: 0
+
+# The how-it-works board: a hologram above the block recorded with
+# /bvsetup hologram info (e.g. the pillar at the entrance). Floors that haven't
+# opened get their own sign automatically - /bvsetup hologram <2-6>.
+# & colour codes. Placeholders: {done} {total} {percent} {floor}
+# {common} {uncommon} {rare} (points per rarity, from 'points' above).
+info-board:
+  enabled: true
+  # Text size (1.0 = normal).
+  scale: 1.0
+  lines:
+    - "&6&lThe Block Vault"
+    - "&7One of every block in Minecraft - collected together."
+    - ""
+    - "&e&lHow it works"
+    - "&f/bvsubmit &7opens the donation chest"
+    - "&7First to give a block &funlocks it &7and earns points"
+    - "&aCommon {common} &8· &9Uncommon {uncommon} &8· &dRare {rare}"
+    - "&7Give the most of a block to wear its &fniche head"
+    - "&7New floors open on set dates through the season"
+    - ""
+    - "&f/bvcheck &7what you're carrying that the vault needs"
+    - "&f/bvmissing &8· &f/bvfind &8· &f/bvme"
+    - ""
+    - "&6{done} &7/ &6{total} &7blocks collected &8({percent}%)"
 
 # Optional Discord webhook for rare submissions and chapter unlocks.
 # Doubles as an off-server recovery log. Leave blank to disable.

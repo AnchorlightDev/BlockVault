@@ -70,15 +70,7 @@ public final class StartupValidation {
             }
         }
 
-        // Every floor that has blocks should have its seal recorded (floor 1 has none).
-        for (int ch = 2; ch <= 6; ch++) {
-            final int c = ch;
-            boolean hasBlocks = plugin.manifest().entries().values().stream().anyMatch(e -> e.chapter() == c);
-            if (hasBlocks && plugin.manifest().seal(ch) == null) {
-                log.warning("[validation] floor " + ch + " has no seal recorded - /bvsetup seal " + ch);
-                problems++;
-            }
-        }
+        // Seals are optional: a floor without one still opens, so no check here.
 
         // manifest <-> vault_items.yml (optional legacy cross-check; the layout
         // built by /bvsetup carries rarities itself)

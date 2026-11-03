@@ -15,7 +15,7 @@ import java.util.UUID;
  * {@code /bvstart} opens the event; {@code /bvstart stop} closes it again.
  *
  * <p>The flag lives in the database ({@code bv_state}), not config.yml. While
- * the vault is closed no floor opens, by date or by 90%; on {@code /bvstart}
+ * the vault is closed no floor opens, by date or early; on {@code /bvstart}
  * any floor whose {@code opens-at} has already passed opens immediately.
  */
 public class StartCommand implements CommandExecutor {
@@ -74,7 +74,7 @@ public class StartCommand implements CommandExecutor {
     /** Floors 2-6 that are still sealed but whose configured open date has passed. */
     private List<Integer> overdueFloors() {
         List<Integer> out = new ArrayList<>();
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(plugin.zone());
         for (int ch = 2; ch <= 6; ch++) {
             if (plugin.chapters().isOpen(ch)) continue;
             String raw = plugin.getConfig().getString("chapters." + ch + ".opens-at");

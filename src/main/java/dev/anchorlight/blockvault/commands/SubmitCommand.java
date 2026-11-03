@@ -17,22 +17,26 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.BlockStateMeta;
 
 /**
- * {@code /bvsubmit [amount]} - donate the held block (the whole stack by default).
+ * {@code /bvsubmit} - opens the donation chest ({@link DonationBox}).
+ * {@code /bvsubmit hand [amount]} (or {@code /bvsubmit <amount>}) - donate the
+ * held block, the whole stack by default.
  *
  * <p>The first donation of a block unlocks it and earns its rarity points.
  * Later donations earn no points but add to the donor's tally for that block;
  * whoever has donated the most wears the niche head.
  *
  * <p>Order is always: write -> confirm commit -> consume. If the database is
- * unreachable the items stay in the player's hand.
+ * unreachable the items stay with the player.
  */
 public class SubmitCommand implements CommandExecutor {
     private final BlockVault plugin;
     private final VaultUtil vaultUtil;
+    private final DonationBox box;
 
-    public SubmitCommand(BlockVault plugin) {
+    public SubmitCommand(BlockVault plugin, DonationBox box) {
         this.plugin = plugin;
         this.vaultUtil = new VaultUtil(plugin);
+        this.box = box;
     }
 
     @Override
@@ -41,28 +45,55 @@ public class SubmitCommand implements CommandExecutor {
             plugin.tell(sender, "§cOnly players can use this command!");
             return true;
         }
-        if (!player.hasPermission("blockvault.submit")) {
-            plugin.tell(player, "§cYou don't have permission to submit blocks.");
+        if (!canSubmit(plugin, player)) return true;
+
+        if (args.length == 0) {
+            box.open(player);
             return true;
         }
-        if (!vaultUtil.hasStarted()) {
-            plugin.tell(player, "§cThe vault has not been opened yet.");
+        if (args[0].equalsIgnoreCase("hand")) {
+            submitHand(player, args.length > 1 ? args[1] : null);
             return true;
+        }
+        submitHand(player, args[0]); // /bvsubmit <amount>
+        return true;
+    }
+
+    /** Permission, event open, not creative, inside the vault. Tells the player why not. */
+    static boolean canSubmit(BlockVault plugin, Player player) {
+        if (!player.hasPermission("blockvault.submit")) {
+            plugin.tell(player, "§cYou don't have permission to submit blocks.");
+            return false;
+        }
+        if (!plugin.isVaultStarted()) {
+            plugin.tell(player, "§cThe vault has not been opened yet.");
+            return false;
         }
         if (player.getGameMode() == GameMode.CREATIVE) {
             plugin.tell(player, "§cSubmissions are not allowed in creative mode.");
-            return true;
+            return false;
         }
         var region = plugin.region();
         if (region == null || !region.contains(player.getLocation())) {
             plugin.tell(player, "§cYou must be inside the vault to submit a block.");
-            return true;
+            return false;
         }
+        return true;
+    }
 
+    /** A container item (shulker box etc.) that still has something in it. */
+    static boolean hasContents(ItemStack item) {
+        return item.getItemMeta() instanceof BlockStateMeta bsm
+                && bsm.hasBlockState()
+                && bsm.getBlockState() instanceof Container c
+                && !c.getInventory().isEmpty();
+    }
+
+    private void submitHand(Player player, String amountArg) {
         ItemStack held = player.getInventory().getItemInMainHand();
         if (held.getType() == Material.AIR || held.getAmount() < 1) {
-            plugin.tell(player, "§cYou are not holding anything.");
-            return true;
+            plugin.tell(player, "§cYou are not holding anything. §7(/bvsubmit opens the donation chest)");
+            return;
         }
 
         Material type = held.getType();
@@ -72,33 +103,30 @@ public class SubmitCommand implements CommandExecutor {
         TargetEntry entry = plugin.manifest().entry(material);
         if (entry == null) {
             plugin.tell(player, "§c" + pretty + " is not part of this collection.");
-            return true;
+            return;
         }
         // A shulker box (or any container item) with contents would take its
         // contents with it - refuse rather than destroy someone's stash.
-        if (held.getItemMeta() instanceof BlockStateMeta bsm
-                && bsm.hasBlockState()
-                && bsm.getBlockState() instanceof Container box
-                && !box.getInventory().isEmpty()) {
+        if (hasContents(held)) {
             plugin.tell(player, "§cEmpty the " + pretty + " first - its contents would be lost.");
-            return true;
+            return;
         }
 
         int amount = held.getAmount();
-        if (args.length > 0) {
+        if (amountArg != null) {
             try {
-                amount = Integer.parseInt(args[0]);
+                amount = Integer.parseInt(amountArg);
             } catch (NumberFormatException e) {
-                plugin.tell(player, "§cUsage: /bvsubmit [amount]");
-                return true;
+                plugin.tell(player, "§cUsage: /bvsubmit §7(chest)§c, /bvsubmit hand [amount]");
+                return;
             }
             if (amount < 1) {
                 plugin.tell(player, "§cAmount must be at least 1.");
-                return true;
+                return;
             }
             if (amount > held.getAmount()) {
                 plugin.tell(player, "§cYou're only holding " + held.getAmount() + ".");
-                return true;
+                return;
             }
         }
         final int quantity = amount;
@@ -142,15 +170,21 @@ public class SubmitCommand implements CommandExecutor {
                         + (iLead ? "§6You're the top donor - the head is yours."
                                  : top == null ? "" : "§7Top donor: §f" + top.name() + " §7(" + top.quantity() + ")"));
 
-                // Niche head follows the top donor, but only on an open floor
-                // (locked floors keep plain heads; the reconcile pass fixes them on unlock).
-                if (plugin.chapters().isOpen(entry.chapter())) {
-                    vaultUtil.applyNiche(entry, top);
-                }
+                showOnWall(plugin, vaultUtil, entry, top);
                 plugin.displays().refresh();
             });
         });
-        return true;
+    }
+
+    /**
+     * Niche head and label follow the top donor, but only on an open floor
+     * (locked floors stay plain; the reconcile pass fixes them on unlock).
+     */
+    static void showOnWall(BlockVault plugin, VaultUtil vaultUtil, TargetEntry entry, Database.TopDonor top) {
+        if (!plugin.chapters().isOpen(entry.chapter())) return;
+        vaultUtil.applyNiche(entry, top);
+        var world = plugin.originWorld();
+        if (world != null) vaultUtil.applyLabel(world, entry, true, top);
     }
 
     /**
@@ -182,7 +216,7 @@ public class SubmitCommand implements CommandExecutor {
         }
     }
 
-    private void celebrate(Player player, String rarity) {
+    static void celebrate(Player player, String rarity) {
         Sound sound = switch (rarity) {
             case "rare" -> Sound.UI_TOAST_CHALLENGE_COMPLETE;
             case "uncommon" -> Sound.ENTITY_PLAYER_LEVELUP;
