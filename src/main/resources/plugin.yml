@@ -7,8 +7,8 @@ libraries:
   - com.mysql:mysql-connector-j:8.4.0
 commands:
   bvsubmit:
-    description: Open the donation chest, or donate the block you are holding.
-    usage: /bvsubmit | /bvsubmit hand [amount]
+    description: Open the donation chest, donate one of every new block you carry, or donate the block you are holding.
+    usage: /bvsubmit | /bvsubmit new | /bvsubmit hand [amount]
   bvleaderboard:
     description: Show the top contributors (add 'month' for this month only).
     usage: /bvleaderboard [month]

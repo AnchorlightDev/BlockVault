@@ -19,7 +19,8 @@ import org.bukkit.inventory.meta.BlockStateMeta;
 /**
  * {@code /bvsubmit} - opens the donation chest ({@link DonationBox}).
  * {@code /bvsubmit hand [amount]} (or {@code /bvsubmit <amount>}) - donate the
- * held block, the whole stack by default.
+ * held block, the whole stack by default. {@code /bvsubmit new} - donate one
+ * of every block in your inventory the vault hasn't got yet.
  *
  * <p>The first donation of a block unlocks it and earns its rarity points.
  * Later donations earn no points but add to the donor's tally for that block;
@@ -49,6 +50,10 @@ public class SubmitCommand implements CommandExecutor {
 
         if (args.length == 0) {
             box.open(player);
+            return true;
+        }
+        if (args[0].equalsIgnoreCase("new")) {
+            submitNew(player);
             return true;
         }
         if (args[0].equalsIgnoreCase("hand")) {
@@ -89,6 +94,40 @@ public class SubmitCommand implements CommandExecutor {
                 && !c.getInventory().isEmpty();
     }
 
+    /**
+     * One of each block in the player's inventory that nobody has donated yet -
+     * the quick way to bank every unlock you're carrying without giving up stacks.
+     * The items leave the inventory first and go through the donation chest's
+     * pipeline, which hands back anything that isn't recorded.
+     */
+    private void submitNew(Player player) {
+        var inv = player.getInventory();
+        ItemStack[] contents = inv.getStorageContents();
+        java.util.Set<String> picked = new java.util.HashSet<>();
+        java.util.List<ItemStack> taken = new java.util.ArrayList<>();
+        for (int i = 0; i < contents.length; i++) {
+            ItemStack it = contents[i];
+            if (it == null || it.getType() == Material.AIR || it.getAmount() < 1) continue;
+            String material = it.getType().getKey().getKey();
+            if (picked.contains(material)
+                    || plugin.manifest().entry(material) == null
+                    || plugin.database().isCollected(material)
+                    || hasContents(it)) continue;
+            ItemStack one = it.clone();
+            one.setAmount(1);
+            taken.add(one);
+            picked.add(material);
+            it.setAmount(it.getAmount() - 1);
+            inv.setItem(i, it.getAmount() > 0 ? it : null);
+        }
+        if (taken.isEmpty()) {
+            plugin.tell(player, "§7You're not carrying anything the vault doesn't already have. "
+                    + "§8(/bvsubmit opens the donation chest for extra copies)");
+            return;
+        }
+        box.donate(player, taken);
+    }
+
     private void submitHand(Player player, String amountArg) {
         ItemStack held = player.getInventory().getItemInMainHand();
         if (held.getType() == Material.AIR || held.getAmount() < 1) {
@@ -117,7 +156,7 @@ public class SubmitCommand implements CommandExecutor {
             try {
                 amount = Integer.parseInt(amountArg);
             } catch (NumberFormatException e) {
-                plugin.tell(player, "§cUsage: /bvsubmit §7(chest)§c, /bvsubmit hand [amount]");
+                plugin.tell(player, "§cUsage: /bvsubmit §7(chest)§c, /bvsubmit new§7, §c/bvsubmit hand [amount]");
                 return;
             }
             if (amount < 1) {

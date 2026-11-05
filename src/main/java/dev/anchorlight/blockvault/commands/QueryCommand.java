@@ -188,7 +188,8 @@ public final class QueryCommand implements CommandExecutor, TabCompleter {
             return;
         }
         plugin.tell(sender, "§aThe vault needs " + needed.size() + " block(s) you're carrying:");
-        needed.forEach(n -> sender.sendMessage("§7 · §f" + n + " §8— /bvsubmit"));
+        needed.forEach(n -> sender.sendMessage("§7 · §f" + n));
+        plugin.tell(sender, "§f/bvsubmit new §7gives one of each of these in one go.");
     }
 
     private void me(CommandSender sender) {

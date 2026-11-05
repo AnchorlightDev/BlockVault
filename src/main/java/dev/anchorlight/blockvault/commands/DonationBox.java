@@ -78,7 +78,14 @@ public final class DonationBox implements Listener {
         }
         e.getInventory().clear();
         if (given.isEmpty()) return;
+        donate(player, given);
+    }
 
+    /**
+     * Donate items already taken from the player (the chest, or
+     * {@code /bvsubmit new}). Anything not recorded goes back to them.
+     */
+    void donate(Player player, List<ItemStack> given) {
         // Conditions may have changed while the chest was open (left the vault, event closed...).
         if (!SubmitCommand.canSubmit(plugin, player)) {
             giveBack(player, given);

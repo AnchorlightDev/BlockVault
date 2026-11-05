@@ -87,6 +87,8 @@ heads, no item, not counted in the season total.
   it. Items the vault doesn't collect come straight back; the rest are recorded
   one block type at a time, and any type whose write fails is returned too.
   `/bvsubmit hand [n]` (or `/bvsubmit <n>`) still donates the held stack.
+  `/bvsubmit new` donates one of every block in your inventory the vault
+  doesn't have yet - every unlock you're carrying in one go, stacks left alone.
 - **Niches are heads + the block and its name.** On open floors the block is
   shown as a small item on the face of the block directly below each niche head,
   with its name underneath (`display.label` / `label-scale` in config). Locked floors show plain
@@ -130,7 +132,7 @@ query commands hide them unless the sender has `blockvault.spoilers`.
 
 | Command | Permission | Purpose |
 |---|---|---|
-| `/bvsubmit` / `/bvsubmit hand [n]` | `blockvault.submit` | Donation chest, or the held block (in-region, no creative) |
+| `/bvsubmit` / `/bvsubmit new` / `/bvsubmit hand [n]` | `blockvault.submit` | Donation chest, one of each new block you carry, or the held block (in-region, no creative) |
 | `/bvprogress` | `blockvault.progress` | Current-chapter bar + overall bar |
 | `/bvleaderboard [month]` | `blockvault.leaderboard` | Top 10 all-time, or this month |
 | `/bvfind <block>` | `blockvault.find` | Level, room, shelf coordinates |
