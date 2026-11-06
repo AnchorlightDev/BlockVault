@@ -16,7 +16,8 @@
 # v3: early-open-percent added (floors open on their dates only by default).
 # v4: timezone added.
 # v5: info-board added.
-config-version: 5
+# v6: points.leader-bonus added.
+config-version: 6
 
 edition: '26.2'
 
@@ -66,6 +67,10 @@ points:
   common: 1
   uncommon: 5
   rare: 10
+  # Flat bonus paid ONCE when the season ends (/bvfinish), to each block's
+  # leader - the player who has given the most of that block. A player leading
+  # several blocks is paid this for each. 0 disables the end-of-season bonus.
+  leader-bonus: 5
 
 # Timezone the chapter opens-at times below are written in (an IANA zone id).
 # Daylight saving is handled. Blank = the server machine's own timezone.

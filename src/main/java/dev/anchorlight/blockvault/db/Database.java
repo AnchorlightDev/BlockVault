@@ -38,6 +38,8 @@ public final class Database {
     private final Set<String> collected = Collections.newSetFromMap(new ConcurrentHashMap<>());
     /** Event open flag (bv_state). Read path is memory; changed only after a write commits. */
     private volatile boolean started;
+    /** Terminal read-only flag (bv_state). Once true the vault cannot reopen or accept writes. */
+    private volatile boolean finished;
 
     public enum SubmitOutcome { OK, DB_ERROR }
 
@@ -89,6 +91,7 @@ public final class Database {
     public void bootstrap(Manifest manifest) throws SQLException {
         try (Connection c = ds.getConnection()) {
             runSchema(c);
+            migrate(c);
             seedTargets(c, manifest);
             seedChapters(c, manifest);
             syncChapterDates(c);
@@ -113,6 +116,33 @@ public final class Database {
                 if (!stmt.isEmpty()) st.execute(stmt);
             }
         }
+    }
+
+    /**
+     * In-place upgrades for databases created before a column existed.
+     * {@code CREATE TABLE IF NOT EXISTS} never alters an existing table, so each
+     * added column is applied here, guarded by information_schema so it is safe
+     * to run on every boot. MySQL 8 has no {@code ADD COLUMN IF NOT EXISTS}.
+     */
+    private void migrate(Connection c) throws SQLException {
+        ensureColumn(c, "bv_state", "finished", "TINYINT(1) NOT NULL DEFAULT 0");
+        ensureColumn(c, "bv_state", "finished_at", "DATETIME NULL");
+    }
+
+    private void ensureColumn(Connection c, String table, String column, String definition) throws SQLException {
+        try (PreparedStatement ps = c.prepareStatement(
+                "SELECT 1 FROM information_schema.columns "
+                + "WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?")) {
+            ps.setString(1, table);
+            ps.setString(2, column);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) return; // already present
+            }
+        }
+        try (Statement st = c.createStatement()) {
+            st.execute("ALTER TABLE " + table + " ADD COLUMN " + column + " " + definition);
+        }
+        plugin.getLogger().info("Migrated " + table + ": added column " + column + ".");
     }
 
     private static String stripComments(String block) {
@@ -634,11 +664,14 @@ public final class Database {
 
     private void loadState(Connection c) throws SQLException {
         try (PreparedStatement ps = c.prepareStatement(
-                "SELECT started FROM bv_state WHERE edition = ?")) {
+                "SELECT started, finished FROM bv_state WHERE edition = ?")) {
             ps.setString(1, edition);
             try (ResultSet rs = ps.executeQuery()) {
                 if (rs.next()) {
                     started = rs.getBoolean(1);
+                    finished = rs.getBoolean(2);
+                    if (finished) plugin.getLogger().info("Vault edition " + edition
+                            + " is FINISHED - running read-only.");
                     return;
                 }
             }
@@ -660,6 +693,114 @@ public final class Database {
     /** In-memory read path. Never hits the database. */
     public boolean isStarted() {
         return started;
+    }
+
+    /** In-memory read path. True once the season has been finished (read-only). */
+    public boolean isFinished() {
+        return finished;
+    }
+
+    /** Outcome of {@link #finish}. */
+    public record FinishResult(boolean ok, boolean alreadyFinished,
+                               int blocksLed, int leaders, long pointsAwarded) {
+        static FinishResult error() { return new FinishResult(false, false, 0, 0, 0); }
+    }
+
+    /**
+     * End the season: mark the vault finished (terminal, read-only) and pay each
+     * block's current leader a flat {@code bonusPerBlock} points, once. All in one
+     * transaction, with the bv_state row locked, so a double {@code /bvfinish}
+     * (or a race) can never pay the bonus twice. Blocking - call async.
+     *
+     * <p>"Leader" is the top of {@link #TOP_ORDER} for a block (most given, then
+     * who reached it first). A player leading N blocks earns {@code N * bonusPerBlock}.
+     */
+    public FinishResult finish(UUID actor, int bonusPerBlock) {
+        try (Connection c = ds.getConnection()) {
+            c.setAutoCommit(false);
+            try {
+                // Lock the state row so concurrent finishes serialise on it.
+                boolean already = false;
+                try (PreparedStatement ps = c.prepareStatement(
+                        "SELECT finished FROM bv_state WHERE edition = ? FOR UPDATE")) {
+                    ps.setString(1, edition);
+                    try (ResultSet rs = ps.executeQuery()) {
+                        if (rs.next()) already = rs.getBoolean(1);
+                    }
+                }
+                if (already) {
+                    c.rollback();
+                    finished = true;
+                    return new FinishResult(true, true, 0, 0, 0);
+                }
+
+                int blocksLed = 0, leaders = 0;
+                long pointsAwarded = 0;
+                if (bonusPerBlock > 0) {
+                    // Blocks each player leads, then award bonusPerBlock for each.
+                    java.util.Map<byte[], Integer> leads = new java.util.LinkedHashMap<>();
+                    try (PreparedStatement ps = c.prepareStatement(
+                            "SELECT r.uuid, COUNT(*) AS leads FROM ("
+                            + " SELECT d.uuid, ROW_NUMBER() OVER "
+                            + "  (PARTITION BY d.material ORDER BY " + TOP_ORDER + ") AS rn"
+                            + " FROM bv_donation d WHERE d.edition = ? AND d.quantity > 0) r"
+                            + " WHERE r.rn = 1 GROUP BY r.uuid")) {
+                        ps.setString(1, edition);
+                        try (ResultSet rs = ps.executeQuery()) {
+                            while (rs.next()) leads.put(rs.getBytes(1), rs.getInt(2));
+                        }
+                    }
+                    try (PreparedStatement ps = c.prepareStatement(
+                            "UPDATE bv_contributor SET points = points + ? WHERE uuid = ?")) {
+                        for (var e : leads.entrySet()) {
+                            int award = e.getValue() * bonusPerBlock;
+                            ps.setInt(1, award);
+                            ps.setBytes(2, e.getKey());
+                            ps.addBatch();
+                            leaders++;
+                            blocksLed += e.getValue();
+                            pointsAwarded += award;
+                        }
+                        ps.executeBatch();
+                    }
+                }
+
+                try (PreparedStatement ps = c.prepareStatement(
+                        "INSERT INTO bv_state (edition, started, started_at, finished, finished_at) "
+                        + "VALUES (?, 0, started_at, 1, CURRENT_TIMESTAMP) "
+                        + "ON DUPLICATE KEY UPDATE started = 0, finished = 1, "
+                        + "finished_at = CURRENT_TIMESTAMP")) {
+                    ps.setString(1, edition);
+                    ps.executeUpdate();
+                }
+
+                try (PreparedStatement ps = c.prepareStatement(
+                        "INSERT INTO bv_audit (actor,action,detail) "
+                        + "VALUES (?,?,JSON_OBJECT('bonusPerBlock',?,'blocksLed',?,'leaders',?,'points',?))")) {
+                    if (actor == null) ps.setNull(1, java.sql.Types.BINARY);
+                    else ps.setBytes(1, toBytes(actor));
+                    ps.setString(2, "event_finish");
+                    ps.setInt(3, bonusPerBlock);
+                    ps.setInt(4, blocksLed);
+                    ps.setInt(5, leaders);
+                    ps.setLong(6, pointsAwarded);
+                    ps.executeUpdate();
+                }
+
+                c.commit();
+                started = false;
+                finished = true;
+                return new FinishResult(true, false, blocksLed, leaders, pointsAwarded);
+            } catch (SQLException e) {
+                c.rollback();
+                throw e;
+            } finally {
+                c.setAutoCommit(true);
+            }
+        } catch (SQLException e) {
+            plugin.getLogger().severe("Finish failed: " + e.getMessage());
+            return FinishResult.error();
+        }
     }
 
     /**

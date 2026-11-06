@@ -16,9 +16,13 @@ commands:
     description: Show current chapter and overall progress.
     usage: /bvprogress
   bvstart:
-    description: Open (or, with 'stop', close) the collection event.
+    description: Open (or, with 'stop', pause) the collection event.
     usage: /bvstart [stop]
     permission: blockvault.start
+  bvfinish:
+    description: End the season (terminal, read-only) and pay each block's leader a bonus.
+    usage: /bvfinish [confirm]
+    permission: blockvault.finish
   bvupdatestate:
     description: Reconcile the world display against the database.
     usage: /bvupdatestate
@@ -97,6 +101,9 @@ permissions:
     default: true
   blockvault.start:
     description: Allows opening and closing the event.
+    default: op
+  blockvault.finish:
+    description: Allows ending the season (terminal, read-only) and paying leader bonuses.
     default: op
   blockvault.updatestate:
     description: Allows reconciling the world display against the database.

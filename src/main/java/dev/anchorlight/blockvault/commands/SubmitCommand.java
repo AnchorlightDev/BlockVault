@@ -70,6 +70,10 @@ public class SubmitCommand implements CommandExecutor {
             plugin.tell(player, "§cYou don't have permission to submit blocks.");
             return false;
         }
+        if (plugin.isVaultFinished()) {
+            plugin.tell(player, "§cThe vault is finished - it's now read-only. Thanks for playing!");
+            return false;
+        }
         if (!plugin.isVaultStarted()) {
             plugin.tell(player, "§cThe vault has not been opened yet.");
             return false;

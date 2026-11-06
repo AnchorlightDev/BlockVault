@@ -100,6 +100,7 @@ public final class BlockVault extends JavaPlugin {
         StartupValidation.run(this);
 
         register("bvstart", new StartCommand(this));
+        register("bvfinish", new FinishCommand(this));
         DonationBox donationBox = new DonationBox(this);
         getServer().getPluginManager().registerEvents(donationBox, this);
         register("bvsubmit", new SubmitCommand(this, donationBox));
@@ -235,6 +236,11 @@ public final class BlockVault extends JavaPlugin {
     /** True once /bvstart has opened the event (and it has not been stopped). */
     public boolean isVaultStarted() {
         return database != null && database.isStarted();
+    }
+
+    /** True once /bvfinish has ended the season: the vault is read-only. */
+    public boolean isVaultFinished() {
+        return database != null && database.isFinished();
     }
 
     public Database database() {

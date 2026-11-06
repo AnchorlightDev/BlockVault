@@ -33,6 +33,11 @@ public class StartCommand implements CommandExecutor {
             return true;
         }
 
+        if (plugin.isVaultFinished()) {
+            plugin.tell(sender, "§cThe vault is finished and read-only - it cannot be reopened.");
+            return true;
+        }
+
         boolean stopping = args.length > 0 && args[0].equalsIgnoreCase("stop");
         boolean started = plugin.isVaultStarted();
 

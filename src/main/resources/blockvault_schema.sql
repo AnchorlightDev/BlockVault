@@ -98,6 +98,10 @@ CREATE TABLE IF NOT EXISTS bv_state (
   edition       VARCHAR(16)     NOT NULL,
   started       TINYINT(1)      NOT NULL DEFAULT 0,
   started_at    DATETIME        NULL,
+  -- finished is terminal: once set the vault is read-only for that edition and
+  -- cannot be reopened. Set by /bvfinish, which also pays the leader bonus once.
+  finished      TINYINT(1)      NOT NULL DEFAULT 0,
+  finished_at   DATETIME        NULL,
   PRIMARY KEY (edition)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 

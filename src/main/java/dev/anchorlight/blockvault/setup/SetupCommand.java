@@ -136,6 +136,11 @@ public final class SetupCommand implements CommandExecutor, TabCompleter, Listen
             return true;
         }
         if (!sub.equals("help") && !sub.equals("cancel")
+                && plugin.isVaultFinished()) {
+            plugin.tell(player, "§cThe vault is finished and read-only - the layout cannot be changed.");
+            return true;
+        }
+        if (!sub.equals("help") && !sub.equals("cancel")
                 && plugin.isVaultStarted()) {
             plugin.tell(player, "§cThe vault is open - the layout is frozen for the season. "
                     + "§7(/bvstart stop first if this is a test server.)");

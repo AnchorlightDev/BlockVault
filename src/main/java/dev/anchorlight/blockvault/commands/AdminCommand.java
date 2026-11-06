@@ -40,6 +40,10 @@ public final class AdminCommand implements CommandExecutor, TabCompleter {
     }
 
     private void revoke(CommandSender sender, String[] args) {
+        if (plugin.isVaultFinished()) {
+            plugin.tell(sender, "§cThe vault is finished and read-only - submissions can't be revoked.");
+            return;
+        }
         if (args.length == 0) {
             plugin.tell(sender, "§cUsage: /bvrevoke <block>");
             return;

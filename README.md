@@ -105,6 +105,13 @@ heads, no item, not counted in the season total.
   floor's seal block, if one was recorded, and runs a broadcast/title/fireworks/BossBar ceremony.
 - **The target list is frozen per `edition`.** New blocks go in as a new edition,
   never the running one.
+- **Ending the season (`/bvfinish`).** When every floor's run is done, `/bvfinish`
+  (confirm with `/bvfinish confirm` within 30s) ends the season: the vault becomes
+  **read-only** (no more submissions, and `/bvstart` can't reopen it) and each
+  block's current leader - whoever has given the most of that block - is paid a
+  flat bonus (`points.leader-bonus`, default 5) once, for every block they lead.
+  This is terminal and cannot be undone. `/bvstart stop` by contrast is only a
+  reversible pause.
 
 ## The six floors
 
@@ -142,7 +149,8 @@ query commands hide them unless the sender has `blockvault.spoilers`.
 | `/bvme` | `blockvault.me` | Blocks unlocked, items given, points, rank |
 | `/bvhistory <block>` | `blockvault.history` | Who unlocked it, and the top 5 donors |
 | `/bvedition` | `blockvault.edition` | Frozen target-list version |
-| `/bvstart [stop]` | `blockvault.start` | Open / close the event |
+| `/bvstart [stop]` | `blockvault.start` | Open / pause the event |
+| `/bvfinish [confirm]` | `blockvault.finish` | End the season: read-only + pay each block's leader a bonus (terminal) |
 | `/bvupdatestate` | `blockvault.updatestate` | Reconcile world ↔ database (console-safe) |
 | `/bvreload` | `blockvault.reload` | Reload config without restart |
 | `/bvrevoke <block>` | `blockvault.revoke` | Reverse a block: clear every donation of it, refund the unlock points |
