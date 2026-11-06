@@ -79,6 +79,7 @@ public class FinishCommand implements CommandExecutor {
                 plugin.tell(sender, "§aThe vault is finished and now read-only.");
                 plugin.tell(sender, "§aPaid §f" + r.pointsAwarded() + " §abonus points to §f"
                         + r.leaders() + " §aplayers across §f" + r.blocksLed() + " §ablocks led.");
+                plugin.webhook().seasonFinished(r.leaders(), r.blocksLed(), r.pointsAwarded());
                 // Redraw so locked/held hints and panels reflect the closed state.
                 if (plugin.displays() != null) plugin.displays().refresh();
             });

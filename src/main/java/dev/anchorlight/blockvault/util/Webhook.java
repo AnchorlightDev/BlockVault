@@ -36,6 +36,13 @@ public final class Webhook {
         send("🔓 **Chapter " + chapter + " — " + escape(title) + "** is now open!");
     }
 
+    /** The season has been finished (read-only) and leader bonuses paid. */
+    public void seasonFinished(int leaders, int blocksLed, long points) {
+        send("🏁 **The vault is finished.** It is now read-only. Paid **" + points
+                + "** bonus points to **" + leaders + "** block leaders across **"
+                + blocksLed + "** blocks. Thanks to everyone who took part!");
+    }
+
     private void send(String content) {
         String url = url();
         if (url == null) return;
