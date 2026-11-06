@@ -647,7 +647,7 @@ public final class SetupCommand implements CommandExecutor, TabCompleter, Listen
         holos.add(key, arr(relOf(b, origin())));
         if (writeLayout(p, root)) {
             plugin.tell(p, "§a" + (key.equals("info") ? "How-it-works board" : "Locked sign for floor " + key)
-                    + " recorded above " + b.getType().getKey().getKey() + ". §7Restart to show it.");
+                    + " recorded above " + b.getType().getKey().getKey() + ". §7Run §f/bvreload §7to show it (or restart).");
         }
     }
 

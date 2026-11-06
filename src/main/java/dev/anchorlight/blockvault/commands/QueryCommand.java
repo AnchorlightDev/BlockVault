@@ -244,10 +244,15 @@ public final class QueryCommand implements CommandExecutor, TabCompleter {
 
     private void reload(CommandSender sender) {
         plugin.reloadConfig();
+        boolean layoutReloaded = plugin.reloadManifest();
         plugin.invalidateRegion();
         plugin.getServer().getScheduler().runTaskAsynchronously(plugin,
                 () -> plugin.database().resyncChapterDates());
-        plugin.tell(sender, "§aConfiguration reloaded.");
+        // Redraw holograms, signs and item displays from the (possibly new) layout.
+        if (plugin.displays() != null) plugin.displays().refresh();
+        plugin.tell(sender, layoutReloaded
+                ? "§aConfig and layout reloaded; displays refreshed."
+                : "§aConfig reloaded; displays refreshed. §7(Layout unchanged - see console if you expected a layout change.)");
     }
 
     // --- helpers -------------------------------------------------------

@@ -177,6 +177,32 @@ public final class BlockVault extends JavaPlugin {
         region = null;
     }
 
+    /**
+     * Re-read the layout file ({@link Manifest#FILE}) from disk so changes made
+     * with {@code /bvsetup} (new hologram spots, re-scanned floors) take effect
+     * without a server restart. The old manifest is kept on any failure or if the
+     * file has no blocks, so a bad edit never blanks a running vault. Returns true
+     * only when a fresh layout was loaded.
+     */
+    public boolean reloadManifest() {
+        Path layout = getDataFolder().toPath().resolve(Manifest.FILE);
+        if (!Manifest.exists(layout, getClassLoader())) return false;
+        try {
+            Manifest reloaded = Manifest.load(layout, getClassLoader(), getConfig().getString("edition", "26.2"));
+            if (reloaded.entries().isEmpty()) {
+                getLogger().warning("Skipped layout reload: " + Manifest.FILE
+                        + " has no blocks for edition " + getConfig().getString("edition") + ".");
+                return false;
+            }
+            this.manifest = reloaded;
+            return true;
+        } catch (Exception e) {
+            getLogger().severe("Could not reload " + Manifest.FILE + ": " + e.getMessage()
+                    + " - keeping the previously loaded layout.");
+            return false;
+        }
+    }
+
     private void forceLoadChunks(boolean load) {
         Region r = region();
         if (r == null || r.world() == null) return;
