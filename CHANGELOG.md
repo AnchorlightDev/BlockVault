@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.1.0] - 2026-11-07
 
+### Added
+
+- **Open/closed status on the lobby hologram.** Shows `● OPEN`, `● CLOSED` or
+  `SEASON COMPLETE` under the title, and `/bvstart` / `/bvstart stop` refresh it at once.
+
+### Changed
+
+- **The "vault still needs…" hint only shows inside the vault.** The held-block
+  action-bar nudge now fires only while you're within the vault region (the same
+  area `/bvsubmit` requires), instead of anywhere on the map, so it no longer nags
+  you about blocks you can't submit from where you are.
+- **Holograms can be repositioned mid-season.** `/bvsetup hologram <2-6|info>` and
+  `/bvsetup lobby [head|name|count|title]` are now allowed while the vault is open,
+  since they only move cosmetic displays and never touch the frozen niche layout.
+  Run `/bvreload` after moving one. Everything remains frozen once the season is
+  finished (read-only).
+
 ### Fixed
 
 - **Blocks from unopened floors can no longer be donated.** `/bvsubmit` (chest),
@@ -14,14 +31,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   yet and hand the items back, instead of silently recording them, awarding points
   and firing the rare-donation webhook. Closes a spoiler/fairness hole where players
   could blind-donate future-floor blocks and lock in early donor credit.
-
-### Changed
-
-- **Holograms can be repositioned mid-season.** `/bvsetup hologram <2-6|info>` and
-  `/bvsetup lobby [head|name|count|title]` are now allowed while the vault is open,
-  since they only move cosmetic displays and never touch the frozen niche layout.
-  Run `/bvreload` after moving one. Everything remains frozen once the season is
-  finished (read-only).
+- **Lobby leader head clears when there are no donations** (e.g. after a reset)
+  instead of keeping the previous leader's skin.
+- **Sealed-floor blocks no longer prompt players.** The "vault still needs…" action-bar
+  hint and `/bvcheck` now skip blocks on floors that haven't opened, which the vault
+  refuses anyway, and no longer spoil what's on those floors.
 
 ## [1.0.0] - 2026-11-07
 

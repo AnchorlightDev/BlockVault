@@ -29,12 +29,20 @@ public final class PlayerGuidanceListener implements Listener {
     public void start() {
         plugin.getServer().getScheduler().runTaskTimer(plugin, () -> {
             if (!vaultUtil.hasStarted()) return;
+            // Only nag inside the vault - the same region /bvsubmit requires, so the
+            // hint never fires out on the map or where a block can't be submitted.
+            var region = plugin.region();
+            if (region == null) return;
             for (Player p : plugin.getServer().getOnlinePlayers()) {
+                if (!region.contains(p.getLocation())) continue;
                 ItemStack held = p.getInventory().getItemInMainHand();
                 Material type = held.getType();
                 if (type == Material.AIR) continue;
                 String material = type.getKey().getKey();
-                if (plugin.manifest().entry(material) == null) continue;
+                var entry = plugin.manifest().entry(material);
+                if (entry == null) continue;
+                // Sealed floors don't take donations yet - and naming the block would spoil them.
+                if (!plugin.chapters().isOpen(entry.chapter())) continue;
                 if (plugin.database().isCollected(material)) continue;
                 p.spigot().sendMessage(ChatMessageType.ACTION_BAR,
                         new TextComponent("§eThe vault still needs "

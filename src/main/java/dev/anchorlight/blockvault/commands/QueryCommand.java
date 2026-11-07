@@ -179,7 +179,8 @@ public final class QueryCommand implements CommandExecutor, TabCompleter {
             if (it == null || it.getType() == Material.AIR) continue;
             String key = it.getType().getKey().getKey();
             TargetEntry e = plugin.manifest().entry(key);
-            if (e != null && !plugin.database().isCollected(key) && !needed.contains(key)) {
+            if (e != null && plugin.chapters().isOpen(e.chapter())
+                    && !plugin.database().isCollected(key) && !needed.contains(key)) {
                 needed.add(key);
             }
         }
