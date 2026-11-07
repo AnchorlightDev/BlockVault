@@ -9,3 +9,4 @@ dependency-reduced-pom.xml
 # Python
 __pycache__/
 *.pyc
+production

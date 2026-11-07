@@ -138,7 +138,12 @@ public final class DisplayService {
         Location at = plugin.resolve(rel).add(0.5, 2.2, 0.5);
         if (at.getWorld() == null || !at.isChunkLoaded()) return; // don't spawn into an unloaded chunk
 
-        StringBuilder text = new StringBuilder("§6§lThe Vault\n§7")
+        // Open/closed status under the title, so players can tell at a glance.
+        String status = plugin.isVaultFinished() ? "§6§lSEASON COMPLETE"
+                : plugin.isVaultStarted() ? "§a§l● OPEN §r§7· /bvsubmit to donate"
+                : "§c§l● CLOSED §r§7· donations paused";
+        StringBuilder text = new StringBuilder("§6§lThe Vault\n")
+                .append(status).append("\n§7")
                 .append(done).append(" / ").append(total)
                 .append(" §7(").append(total == 0 ? 0 : Math.round(100.0 * done / total)).append("%)\n");
         int rank = 1;

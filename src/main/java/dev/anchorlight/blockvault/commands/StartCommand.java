@@ -62,9 +62,11 @@ public class StartCommand implements CommandExecutor {
                 }
                 if (!open) {
                     plugin.tell(sender, "§eThe vault is now closed. Submissions and floor openings are paused.");
+                    if (plugin.displays() != null) plugin.displays().refresh(); // hologram shows CLOSED now
                     return;
                 }
                 plugin.tell(sender, "§aThe vault is open! Players may now submit blocks.");
+                if (plugin.displays() != null) plugin.displays().refresh(); // hologram shows OPEN now
                 List<Integer> due = overdueFloors();
                 if (!due.isEmpty()) {
                     plugin.tell(sender, "§eFloor(s) " + due
