@@ -107,9 +107,17 @@ public final class DisplayService {
                 "§6The Vault", "Hall of the", "First Givers", "");
 
         int[] headRel = plugin.manifest().leader("head");
-        if (headRel == null || leader == null) return;
+        if (headRel == null) return;
         Location loc = plugin.resolve(headRel);
         if (loc.getWorld() == null) return;
+        if (leader == null) {
+            // No donations (e.g. after a reset): clear the old leader's skin.
+            if (loc.getBlock().getState() instanceof Skull skull && skull.getOwnerProfile() != null) {
+                skull.setOwnerProfile(null);
+                skull.update(true, false);
+            }
+            return;
+        }
         if (loc.getBlock().getType() != Material.PLAYER_HEAD
                 && loc.getBlock().getType() != Material.PLAYER_WALL_HEAD) {
             loc.getBlock().setType(Material.PLAYER_HEAD, false);
