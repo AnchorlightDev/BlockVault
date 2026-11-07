@@ -85,7 +85,7 @@ timezone: Australia/Sydney
 # Each floor's drop time is logged at startup so you can check it.
 chapters:
 # Season 2026-27: every 8 weeks, Sundays 7pm Sydney time.
-  '1': { opens-at: '2026-11-08T19:00:00' }
+  '1': { opens-at: '2026-11-07T19:00:00' }
   '2': { opens-at: '2027-01-03T19:00:00' }
   '3': { opens-at: '2027-02-28T19:00:00' }
   '4': { opens-at: '2027-04-25T19:00:00' }
