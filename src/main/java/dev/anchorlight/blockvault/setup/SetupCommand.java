@@ -140,7 +140,10 @@ public final class SetupCommand implements CommandExecutor, TabCompleter, Listen
             plugin.tell(player, "§cThe vault is finished and read-only - the layout cannot be changed.");
             return true;
         }
-        if (!sub.equals("help") && !sub.equals("cancel")
+        // Moving holograms and the lobby panel is purely cosmetic - it never touches the
+        // frozen niche layout - so it stays allowed while the vault is open (but not once finished).
+        boolean cosmetic = sub.equals("hologram") || sub.equals("lobby");
+        if (!sub.equals("help") && !sub.equals("cancel") && !cosmetic
                 && plugin.isVaultStarted()) {
             plugin.tell(player, "§cThe vault is open - the layout is frozen for the season. "
                     + "§7(/bvstart stop first if this is a test server.)");

@@ -113,8 +113,10 @@ public class SubmitCommand implements CommandExecutor {
             ItemStack it = contents[i];
             if (it == null || it.getType() == Material.AIR || it.getAmount() < 1) continue;
             String material = it.getType().getKey().getKey();
+            TargetEntry entry = plugin.manifest().entry(material);
             if (picked.contains(material)
-                    || plugin.manifest().entry(material) == null
+                    || entry == null
+                    || !plugin.chapters().isOpen(entry.chapter())
                     || plugin.database().isCollected(material)
                     || hasContents(it)) continue;
             ItemStack one = it.clone();
@@ -146,6 +148,11 @@ public class SubmitCommand implements CommandExecutor {
         TargetEntry entry = plugin.manifest().entry(material);
         if (entry == null) {
             plugin.tell(player, "§c" + pretty + " is not part of this collection.");
+            return;
+        }
+        if (!plugin.chapters().isOpen(entry.chapter())) {
+            plugin.tell(player, "§c" + pretty + " belongs to a floor that hasn't opened yet - "
+                    + "come back when it does.");
             return;
         }
         // A shulker box (or any container item) with contents would take its

@@ -5,6 +5,24 @@ All notable changes to BlockVault are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-11-07
+
+### Fixed
+
+- **Blocks from unopened floors can no longer be donated.** `/bvsubmit` (chest),
+  `/bvsubmit new` and `/bvsubmit hand` now reject blocks whose floor hasn't opened
+  yet and hand the items back, instead of silently recording them, awarding points
+  and firing the rare-donation webhook. Closes a spoiler/fairness hole where players
+  could blind-donate future-floor blocks and lock in early donor credit.
+
+### Changed
+
+- **Holograms can be repositioned mid-season.** `/bvsetup hologram <2-6|info>` and
+  `/bvsetup lobby [head|name|count|title]` are now allowed while the vault is open,
+  since they only move cosmetic displays and never touch the frozen niche layout.
+  Run `/bvreload` after moving one. Everything remains frozen once the season is
+  finished (read-only).
+
 ## [1.0.0] - 2026-11-07
 
 First public release. BlockVault drives a purpose-built museum for a twelve-month,
@@ -46,4 +64,5 @@ donor head appears on the shelf, and six themed floors unlock over the season.
 - **Persistence.** MySQL/MariaDB schema applied on boot, HikariCP connection
   pooling, and audit logging of submissions and admin actions.
 
+[1.1.0]: https://github.com/AnchorlightDev/BlockVault/releases/tag/v1.1.0
 [1.0.0]: https://github.com/AnchorlightDev/BlockVault/releases/tag/v1.0.0

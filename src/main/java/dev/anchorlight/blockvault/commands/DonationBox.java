@@ -95,6 +95,7 @@ public final class DonationBox implements Listener {
 
         Map<TargetEntry, List<ItemStack>> byBlock = new LinkedHashMap<>();
         List<ItemStack> rejected = new ArrayList<>();
+        List<ItemStack> locked = new ArrayList<>();
         boolean hadFullContainer = false;
         for (ItemStack it : given) {
             TargetEntry entry = plugin.manifest().entry(it.getType().getKey().getKey());
@@ -103,6 +104,8 @@ public final class DonationBox implements Listener {
             } else if (SubmitCommand.hasContents(it)) {
                 rejected.add(it);
                 hadFullContainer = true;
+            } else if (!plugin.chapters().isOpen(entry.chapter())) {
+                locked.add(it);
             } else {
                 byBlock.computeIfAbsent(entry, k -> new ArrayList<>()).add(it);
             }
@@ -112,6 +115,12 @@ public final class DonationBox implements Listener {
             int n = rejected.stream().mapToInt(ItemStack::getAmount).sum();
             plugin.tell(player, "§7Returned §f" + n + " §7item" + (n == 1 ? "" : "s")
                     + " the vault doesn't collect" + (hadFullContainer ? " §8(including a container that wasn't empty)" : "") + ".");
+        }
+        if (!locked.isEmpty()) {
+            giveBack(player, locked);
+            int n = locked.stream().mapToInt(ItemStack::getAmount).sum();
+            plugin.tell(player, "§7Returned §f" + n + " §7item" + (n == 1 ? "" : "s")
+                    + " for floors that haven't opened yet.");
         }
         if (byBlock.isEmpty()) return;
 
