@@ -17,7 +17,8 @@
 # v4: timezone added.
 # v5: info-board added.
 # v6: points.leader-bonus added.
-config-version: 6
+# v7: discord.daily-leaderboard added.
+config-version: 7
 
 edition: '26.2'
 
@@ -126,6 +127,14 @@ info-board:
 # Doubles as an off-server recovery log. Leave blank to disable.
 discord:
   webhook-url: ""
+  # Post the current top contributors to the webhook once a day.
+  # Needs webhook-url set. Skipped while the vault is closed or finished.
+  daily-leaderboard:
+    enabled: true
+    # Hour of day to post, 0-23, in the 'timezone' set above.
+    hour: 19
+    # How many contributors to list.
+    top: 10
 
 lang:
   prefix: "&8&l[&3BV&8&l] "

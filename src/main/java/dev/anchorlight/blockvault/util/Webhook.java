@@ -43,10 +43,35 @@ public final class Webhook {
                 + blocksLed + "** blocks. Thanks to everyone who took part!");
     }
 
+    /**
+     * The once-a-day standings post. {@code heading} names the scope (e.g. a
+     * date), {@code rows} are the top contributors in order. No-op if empty.
+     */
+    public void dailyLeaderboard(String heading, java.util.List<dev.anchorlight.blockvault.db.Database.LeaderRow> rows) {
+        if (rows == null || rows.isEmpty()) return;
+        StringBuilder sb = new StringBuilder("🏆 **" + escape(heading) + "**");
+        int i = 1;
+        for (dev.anchorlight.blockvault.db.Database.LeaderRow r : rows) {
+            sb.append('\n').append(medal(i++)).append(' ').append(escape(r.name()))
+                    .append(" — ").append(r.points()).append(" pts, ")
+                    .append(r.blocks()).append(" blocks");
+        }
+        send(sb.toString());
+    }
+
+    private static String medal(int rank) {
+        return switch (rank) {
+            case 1 -> "🥇";
+            case 2 -> "🥈";
+            case 3 -> "🥉";
+            default -> "`#" + rank + "`";
+        };
+    }
+
     private void send(String content) {
         String url = url();
         if (url == null) return;
-        String body = "{\"content\":\"" + content.replace("\"", "\\\"") + "\","
+        String body = "{\"content\":\"" + jsonEscape(content) + "\","
                 + "\"allowed_mentions\":{\"parse\":[]}}";
         HttpRequest req = HttpRequest.newBuilder(URI.create(url))
                 .timeout(Duration.ofSeconds(10))
@@ -63,5 +88,14 @@ public final class Webhook {
     /** Strip formatting/control characters so display names can't inject into the payload. */
     private static String escape(String s) {
         return s.replaceAll("[\\p{Cntrl}`*_~|\\\\@]", "");
+    }
+
+    /** Escape a string for a JSON string literal (quotes, backslashes, newlines). */
+    private static String jsonEscape(String s) {
+        return s.replace("\\", "\\\\")
+                .replace("\"", "\\\"")
+                .replace("\n", "\\n")
+                .replace("\r", "\\r")
+                .replace("\t", "\\t");
     }
 }
