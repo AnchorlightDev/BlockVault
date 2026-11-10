@@ -1,5 +1,5 @@
 name: BlockVault
-version: '1.1.0'
+version: '1.2.0'
 main: dev.anchorlight.blockvault.BlockVault
 api-version: '26.2'
 libraries:

@@ -131,6 +131,7 @@ public final class BlockVault extends JavaPlugin {
         chapters.start();
         displays.start();
         ScheduleUtil.scheduleVaultStateTask(this, vaultUtil, fileUtil);
+        ScheduleUtil.scheduleDailyLeaderboard(this);
     }
 
     @Override

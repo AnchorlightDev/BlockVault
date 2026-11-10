@@ -103,6 +103,10 @@ heads, no item, not counted in the season total.
   off by default) a floor can open early once the floor below reaches that
   percentage. Earlier chapters never close. Unlock removes the
   floor's seal block, if one was recorded, and runs a broadcast/title/fireworks/BossBar ceremony.
+- **Daily leaderboard to Discord.** With a `discord.webhook-url` set, the current
+  top contributors are posted to the webhook once a day at a configured hour
+  (`discord.daily-leaderboard`, in the plugin `timezone`). Skipped while the vault
+  is closed or finished.
 - **The target list is frozen per `edition`.** New blocks go in as a new edition,
   never the running one.
 - **Ending the season (`/bvfinish`).** When every floor's run is done, `/bvfinish`
