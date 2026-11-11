@@ -287,7 +287,8 @@ public final class DisplayService {
                 .replace("{floor}", String.valueOf(plugin.chapters().current()))
                 .replace("{common}", String.valueOf(cfg.getInt("points.common", 1)))
                 .replace("{uncommon}", String.valueOf(cfg.getInt("points.uncommon", 5)))
-                .replace("{rare}", String.valueOf(cfg.getInt("points.rare", 10)));
+                .replace("{rare}", String.valueOf(cfg.getInt("points.rare", 10)))
+                .replace("{bonus}", String.valueOf(cfg.getInt("points.leader-bonus", 5)));
         text = org.bukkit.ChatColor.translateAlternateColorCodes('&', text);
         upsertBoard(block, "info", text, (float) cfg.getDouble("info-board.scale", 1.0));
     }

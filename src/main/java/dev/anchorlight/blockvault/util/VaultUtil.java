@@ -63,6 +63,15 @@ public class VaultUtil {
     private static final double LABEL_Y = -0.95;
     /** Label sits just proud of the wall face so it doesn't z-fight. */
     private static final double LABEL_OUT = 0.02;
+    /** Translucent dark panel behind the name label, so text reads against any block texture. */
+    private static final Color LABEL_BG = Color.fromARGB(140, 0, 0, 0);
+
+    /** Set a display's uniform scale, preserving its translation and rotation. */
+    private static void setScale(Display d, float scale) {
+        Transformation t = d.getTransformation();
+        d.setTransformation(new Transformation(t.getTranslation(), t.getLeftRotation(),
+                new Vector3f(scale, scale, scale), t.getRightRotation()));
+    }
 
     public boolean hasStarted() {
         return plugin.isVaultStarted();
@@ -163,9 +172,17 @@ public class VaultUtil {
             return true;
         }
         if (existing != null) {
-            if (existing.getItemStack() != null && existing.getItemStack().getType() == type) return false;
-            existing.setItemStack(new ItemStack(type));
-            return true;
+            boolean changed = false;
+            float scale = (float) plugin.getConfig().getDouble("display.item-scale", 0.6);
+            if (existing.getTransformation().getScale().x() != scale) {
+                setScale(existing, scale);
+                changed = true;
+            }
+            if (existing.getItemStack() == null || existing.getItemStack().getType() != type) {
+                existing.setItemStack(new ItemStack(type));
+                changed = true;
+            }
+            return changed;
         }
         spawnItem(at, entry.material(), new ItemStack(type), nicheKey);
         return true;
@@ -189,12 +206,31 @@ public class VaultUtil {
         }
         String text = labelText(entry.material()) + "\n" + statusText(top);
         if (existing != null) {
-            if (text.equals(existing.getText())) return false;
-            existing.setText(text);
-            return true;
+            boolean changed = enforceLabelStyle(existing);
+            if (!text.equals(existing.getText())) {
+                existing.setText(text);
+                changed = true;
+            }
+            return changed;
         }
         spawnLabel(at, entry.material(), text, labelKey);
         return true;
+    }
+
+    /** Bring an existing label up to the configured scale and the contrast panel. */
+    private boolean enforceLabelStyle(TextDisplay d) {
+        boolean changed = false;
+        float scale = (float) plugin.getConfig().getDouble("display.label-scale", 0.45);
+        if (d.getTransformation().getScale().x() != scale) {
+            setScale(d, scale);
+            changed = true;
+        }
+        if (!LABEL_BG.equals(d.getBackgroundColor())) {
+            d.setDefaultBackground(false);
+            d.setBackgroundColor(LABEL_BG);
+            changed = true;
+        }
+        return changed;
     }
 
     /** Second part of a niche label: who holds it and what to beat, or an invitation. */
@@ -249,7 +285,7 @@ public class VaultUtil {
 
     /** Spawn a tagged name label flat against the wall. Also used by the /bvsetup preview. */
     public TextDisplay spawnLabel(Location at, String tag, String text, NamespacedKey key) {
-        float scale = (float) plugin.getConfig().getDouble("display.label-scale", 0.35);
+        float scale = (float) plugin.getConfig().getDouble("display.label-scale", 0.45);
         return at.getWorld().spawn(at, TextDisplay.class, d -> {
             d.getPersistentDataContainer().set(key, PersistentDataType.STRING, tag);
             d.setText(text);
@@ -258,7 +294,7 @@ public class VaultUtil {
             d.setLineWidth(100); // ~one block wide at the default scale; long names wrap
             d.setShadowed(true);
             d.setDefaultBackground(false);
-            d.setBackgroundColor(Color.fromARGB(0, 0, 0, 0));
+            d.setBackgroundColor(LABEL_BG);
             d.setTransformation(new Transformation(
                     new Vector3f(), new AxisAngle4f(),
                     new Vector3f(scale, scale, scale), new AxisAngle4f()));
@@ -302,7 +338,7 @@ public class VaultUtil {
 
     /** Spawn a tagged floating item. Also used by the /bvsetup preview. */
     public ItemDisplay spawnItem(Location at, String tag, ItemStack item, NamespacedKey key) {
-        float scale = (float) plugin.getConfig().getDouble("display.item-scale", 0.4);
+        float scale = (float) plugin.getConfig().getDouble("display.item-scale", 0.6);
         return at.getWorld().spawn(at, ItemDisplay.class, d -> {
             d.getPersistentDataContainer().set(key, PersistentDataType.STRING, tag);
             d.setItemStack(item);

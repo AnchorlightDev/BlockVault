@@ -55,11 +55,11 @@ update:
 # the block as a small item, with its name underneath.
 display:
   # Size of the item (1.0 = a full block).
-  item-scale: 0.4
+  item-scale: 0.6
   # Show the block's name under the item.
   label: true
   # Text size of the name (long names wrap onto a second line).
-  label-scale: 0.35
+  label-scale: 0.45
 
 # Points awarded for UNLOCKING a block (its first donation), per rarity.
 # Repeat donations earn no points; they decide who wears the niche head.
@@ -101,26 +101,22 @@ early-open-percent: 0
 # /bvsetup hologram info (e.g. the pillar at the entrance). Floors that haven't
 # opened get their own sign automatically - /bvsetup hologram <2-6>.
 # & colour codes. Placeholders: {done} {total} {percent} {floor}
-# {common} {uncommon} {rare} (points per rarity, from 'points' above).
+# {common} {uncommon} {rare} (points per rarity, from 'points' above),
+# {bonus} (points.leader-bonus).
 info-board:
   enabled: true
   # Text size (1.0 = normal).
-  scale: 1.0
+  scale: 0.6
   lines:
     - "&6&lThe Block Vault"
-    - "&7One of every block in Minecraft - collected together."
+    - "&7One of every block in Minecraft, collected together."
     - ""
-    - "&e&lHow it works"
-    - "&f/bvsubmit &7opens the donation chest - drop in everything at once"
-    - "&f/bvsubmit new &7gives one of every block you have that's still needed"
-    - "&7First to give a block &funlocks it &7and earns points"
+    - "&f1. &7First to give a block &funlocks it &7and earns points"
     - "&aCommon {common} &8· &9Uncommon {uncommon} &8· &dRare {rare}"
-    - "&7Give the most of a block to wear its &fniche head"
-    - "&7New floors open on set dates through the season"
+    - "&f2. &7Give the most &7-> your head on its niche &8(+{bonus} at season end)"
+    - "&f3. &7Only open floors take blocks"
     - ""
-    - "&f/bvcheck &7what you're carrying that the vault needs"
-    - "&f/bvmissing &8· &f/bvfind &8· &f/bvme"
-    - ""
+    - "&f/bvsubmit &8· &f/bvmissing &8· &f/bvfind &8· &f/bvme"
     - "&6{done} &7/ &6{total} &7blocks collected &8({percent}%)"
 
 # Optional Discord webhook for rare submissions and chapter unlocks.
