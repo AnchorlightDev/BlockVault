@@ -1126,6 +1126,9 @@ public final class Database {
                     }
                 }
 
+                // Featured blocks turned off (count 0): no featured rate this week either.
+                if (featuredCount < 1) featuredNow.clear();
+
                 // Snapshot: each unlocked block's top contributor + second place's quantity.
                 List<BlockSnapshot> snaps = new ArrayList<>();
                 Map<UUID, String> names = new LinkedHashMap<>();
@@ -1310,6 +1313,63 @@ public final class Database {
     }
 
     // ----------------------------------------------------------------- featured block
+
+    /**
+     * If there is no current featured block, pick {@code count} from the open
+     * floors (same rule as the weekly rotation: fewest contributions first) and
+     * make them current. One transaction, serialised on the bv_state row, and the
+     * "is there one already?" check happens inside it, so two callers can never
+     * both pick. Returns the new pick, or an empty list if one already existed,
+     * nothing was eligible, or the write failed. Blocking - call async.
+     */
+    public java.util.List<String> autoPickFeaturedIfNone(String weekKey, Set<Integer> openChapters,
+                                                         int count, Random rng) {
+        if (openChapters == null || openChapters.isEmpty() || count < 1) return java.util.List.of();
+        String inClause = intInClause(openChapters);
+        try (Connection c = ds.getConnection()) {
+            c.setAutoCommit(false);
+            try {
+                try (PreparedStatement ps = c.prepareStatement(
+                        "SELECT started FROM bv_state WHERE edition = ? FOR UPDATE")) {
+                    ps.setString(1, edition);
+                    try (ResultSet rs = ps.executeQuery()) { rs.next(); }
+                }
+                try (PreparedStatement ps = c.prepareStatement(
+                        "SELECT 1 FROM bv_featured WHERE edition = ? LIMIT 1")) {
+                    ps.setString(1, edition);
+                    try (ResultSet rs = ps.executeQuery()) {
+                        if (rs.next()) { c.rollback(); return java.util.List.of(); } // one is already set
+                    }
+                }
+                List<String> picks = pickFeatured(c, inClause, Set.of(), count, rng);
+                if (picks.isEmpty()) { c.rollback(); return java.util.List.of(); }
+                java.sql.Timestamp setAt = new java.sql.Timestamp(System.currentTimeMillis());
+                try (PreparedStatement ps = c.prepareStatement(
+                        "INSERT INTO bv_featured (edition,week_key,material,set_at,set_by) VALUES (?,?,?,?,NULL)")) {
+                    for (String m : picks) {
+                        ps.setString(1, edition);
+                        ps.setString(2, weekKey);
+                        ps.setString(3, m);
+                        ps.setTimestamp(4, setAt);
+                        ps.addBatch();
+                    }
+                    ps.executeBatch();
+                }
+                c.commit();
+                audit(null, "featured_auto", picks.get(0),
+                        "{\"week\":\"" + weekKey + "\",\"count\":" + picks.size() + "}");
+                return picks;
+            } catch (SQLException e) {
+                c.rollback();
+                throw e;
+            } finally {
+                c.setAutoCommit(true);
+            }
+        } catch (SQLException e) {
+            plugin.getLogger().severe("Automatic featured pick failed: " + e.getMessage());
+            return java.util.List.of();
+        }
+    }
 
     /** The current featured block(s): the most recently set batch. Blocking. */
     public java.util.List<String> currentFeatured() {

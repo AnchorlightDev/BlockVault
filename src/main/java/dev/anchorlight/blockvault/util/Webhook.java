@@ -32,6 +32,16 @@ public final class Webhook {
                 + escape(material) + "` (+" + points + " points)");
     }
 
+    /** A featured block was picked automatically (no payout ran to announce it). */
+    public void featuredBlock(String names) {
+        send("⭐ **This week's featured block: " + escape(names) + "** - double unlock points, "
+                + "and its top contributor earns extra at the weekly payout.");
+    }
+
+    public void chapterCompleted(int chapter, String title) {
+        send("✅ **Chapter " + chapter + " — " + escape(title) + "** is complete! Every block on that floor has been given.");
+    }
+
     public void chapterOpened(int chapter, String title) {
         send("🔓 **Chapter " + chapter + " — " + escape(title) + "** is now open!");
     }

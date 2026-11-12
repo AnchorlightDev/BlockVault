@@ -78,9 +78,9 @@ public final class QueryCommand implements CommandExecutor, TabCompleter {
 
     /**
      * A block can be looked up if its floor is open - or if it's already been
-     * donated: the donation chest accepts blocks for sealed floors, so the donor
-     * already knows it counts. Those get a {@link #sealed} view with no floor,
-     * room, section or coordinates.
+     * donated (only possible before 1.1.0, when sealed floors still took
+     * donations). Those get a {@link #sealed} view with no floor, room, section
+     * or coordinates.
      */
     private boolean canSee(CommandSender sender, TargetEntry e) {
         return canSee(sender, e.chapter()) || plugin.database().isCollected(e.material());

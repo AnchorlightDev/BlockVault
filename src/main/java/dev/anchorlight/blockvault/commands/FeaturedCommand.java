@@ -59,6 +59,10 @@ public final class FeaturedCommand implements CommandExecutor, TabCompleter {
             plugin.tell(sender, "§cUsage: /bvfeatured set <block>");
             return;
         }
+        if (!plugin.getConfig().getBoolean("featured-block.enabled", true)) {
+            plugin.tell(sender, "§cFeatured blocks are turned off (featured-block.enabled: false).");
+            return;
+        }
         String material = args[1].toLowerCase(Locale.ENGLISH).replace("minecraft:", "");
         TargetEntry entry = plugin.manifest().entry(material);
         if (entry == null) {
@@ -92,6 +96,8 @@ public final class FeaturedCommand implements CommandExecutor, TabCompleter {
             plugin.featured().refresh();
             plugin.getServer().getScheduler().runTask(plugin, () -> {
                 plugin.tell(sender, ok ? "§aCleared the current featured block."
+                        + (plugin.featured().featured().isEmpty()
+                           ? " §7A new one will be picked automatically within a minute." : "")
                         : "§7There was no featured block to clear.");
                 plugin.displays().refresh();
             });

@@ -3,7 +3,6 @@ package dev.anchorlight.blockvault.util;
 import dev.anchorlight.blockvault.BlockVault;
 import dev.anchorlight.blockvault.bonus.WeekKeys;
 import dev.anchorlight.blockvault.db.Database;
-import dev.anchorlight.blockvault.model.TargetEntry;
 import org.bukkit.Material;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
@@ -56,7 +55,7 @@ public final class WeeklyBonusService {
 
         String weekKey = WeekKeys.of(payoutTime);
         String nextWeekKey = WeekKeys.next(payoutTime);
-        Set<Integer> open = openChapters();
+        Set<Integer> open = plugin.featured().openChapters();
         int pts = plugin.getConfig().getInt("weekly-bonus.points-per-block", 2);
         int cap = Math.max(1, plugin.getConfig().getInt("weekly-bonus.cap-blocks", 10));
         int featuredPts = plugin.getConfig().getInt("weekly-bonus.featured-points-per-block", 4);
@@ -156,15 +155,6 @@ public final class WeeklyBonusService {
                 plugin.tell(p, msg);
             }
         }
-    }
-
-    /** The unlocked floors, from the in-memory chapter state (so chapter 1 is included). */
-    private Set<Integer> openChapters() {
-        Set<Integer> open = new HashSet<>();
-        for (TargetEntry e : plugin.manifest().entries().values()) {
-            if (plugin.chapters().isOpen(e.chapter())) open.add(e.chapter());
-        }
-        return open;
     }
 
     private String pretty(String material) {

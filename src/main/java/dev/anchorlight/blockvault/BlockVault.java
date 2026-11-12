@@ -38,6 +38,7 @@ public final class BlockVault extends JavaPlugin {
     private DisplayService displays;
     private Webhook webhook;
     private FeaturedService featured;
+    private DonationBox donationBox;
     private WeeklyBonusService weekly;
     private Region region;
 
@@ -107,7 +108,7 @@ public final class BlockVault extends JavaPlugin {
 
         register("bvstart", new StartCommand(this));
         register("bvfinish", new FinishCommand(this));
-        DonationBox donationBox = new DonationBox(this);
+        this.donationBox = new DonationBox(this);
         getServer().getPluginManager().registerEvents(donationBox, this);
         register("bvsubmit", new SubmitCommand(this, donationBox));
         register("bvprogress", new ProgressCommand(this));
@@ -158,10 +159,12 @@ public final class BlockVault extends JavaPlugin {
         ScheduleUtil.scheduleVaultStateTask(this, vaultUtil, fileUtil);
         ScheduleUtil.scheduleDailyLeaderboard(this);
         ScheduleUtil.scheduleWeeklyBonus(this, weekly);
+        featured.start();
     }
 
     @Override
     public void onDisable() {
+        if (donationBox != null) donationBox.closeAll(); // hand back anything in an open chest
         if (setup != null) setup.cancelAll();
         if (displays != null) displays.stop();
         if (chapters != null) chapters.stop();

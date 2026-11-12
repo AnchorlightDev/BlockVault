@@ -100,9 +100,8 @@ public final class ChapterService {
                     if (started && !isOpen(ch) && row.openedAt() == null) {
                         boolean dateReached = row.opensAt() != null
                                 && now >= row.opensAt().getTime();
-                        // Optional early opening (early-open-percent, 0 = off). Blocks for a
-                        // locked floor can be donated blind, so the previous floor can hit the
-                        // threshold while still sealed - never skip past it.
+                        // Optional early opening (early-open-percent, 0 = off). Only ever
+                        // opens the floor directly above an open one - never skips past it.
                         boolean prevNearlyDone = earlyFraction > 0 && isOpen(ch - 1)
                                 && fraction(ch - 1, collected) >= earlyFraction;
                         if (dateReached || prevNearlyDone) {
@@ -132,7 +131,7 @@ public final class ChapterService {
         plugin.getServer().broadcastMessage(plugin.prefix() + line);
         plugin.getServer().getOnlinePlayers().forEach(p ->
                 p.playSound(p.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, 1f, 1.2f));
-        plugin.webhook().chapterOpened(row.chapter(), row.title() + " (complete)");
+        plugin.webhook().chapterCompleted(row.chapter(), row.title());
         plugin.displays().refresh();
         plugin.getLogger().info("Chapter " + row.chapter() + " reached 100%.");
     }

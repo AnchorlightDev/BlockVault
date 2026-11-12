@@ -193,7 +193,7 @@ public class SubmitCommand implements CommandExecutor {
 
         plugin.tell(player, "§7Donating " + quantity + "× " + pretty + "…");
 
-        boolean featured = plugin.featured().isFeatured(material);
+        boolean featured = plugin.featured().doublesUnlock(material);
         plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
             Database.SubmitResult r = db.submit(material, player.getUniqueId(), player.getName(),
                     quantity, firstPoints, profileJson, "hand", featured);

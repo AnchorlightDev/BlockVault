@@ -43,6 +43,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Featured blocks and blocks you top glow. `/bvblocks [needed|unlocked|top|carrying] [floor]`
   opens it pre-filtered; alias `/bvbrowse`. Locked floors stay hidden (`blockvault.spoilers`).
 
+- **Featured block is set automatically.** If the vault is open and no featured
+  block is set (the first week of a season, or after `/bvfeatured clear` removes the
+  last one), one is picked within a minute using the weekly rotation's rule (fewest
+  contributions first) and announced in-game and on Discord. The weekly payout
+  still rotates it each week.
+
 ### Changed
 
 - **Tie-breaking is explicit everywhere.** On an equal amount of a block, the top
@@ -82,6 +88,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `owed_items.yml` until the player rejoins.
 - **Exact ties are ordered the same in SQL and Java** (uuid as the final tie-break).
 - **Leaderboards no longer list players with 0 points.**
+- **Closing the donation chest by disconnecting, or during a shutdown/reload, could
+  lose its contents** (the async write might never finish). The items now go straight
+  back into the player's inventory instead, and open chests are closed on disable.
+- **Display refreshes are coalesced** - a burst of donations ran a full ~10-query
+  refresh per donation; calls within a second now share one pass.
+- **Chapter completion was posted to Discord as "is now open!"** - it now has its own
+  message.
+- **`/bvbackup` could hang** if mysqldump wrote a lot to stderr (never read). stderr now
+  goes to a file and its first line is shown when a backup fails.
+- **Turning featured blocks off didn't fully turn them off** - the last pick still
+  glowed, showed on the board and paid the featured rate at the payout. With
+  `featured-block.enabled: false` nothing is featured, and `/bvfeatured set` says so.
+- **`/bvblocks` buttons stopped working** if another plugin cancelled the click first.
+- **`featured-block.double-first-contributor` was ignored** - featured unlocks always
+  paid double. The setting (and `featured-block.enabled`) now applies.
 
 ## [1.2.0] - 2026-11-08
 

@@ -112,12 +112,26 @@ public final class AdminCommand implements CommandExecutor, TabCompleter {
             try {
                 ProcessBuilder pb = new ProcessBuilder(cmd);
                 pb.environment().put("MYSQL_PWD", cfg.getString("database.password", ""));
-                pb.redirectErrorStream(false);
+                // stderr goes to a file: an unread pipe can fill up and hang mysqldump,
+                // and its first line is the useful part of a failure message.
+                File err = new File(dir, out.getName() + ".err");
+                pb.redirectError(err);
                 pb.redirectOutput(out);
                 Process p = pb.start();
                 int code = p.waitFor();
                 ok = code == 0 && out.length() > 0;
-                detail = ok ? (out.length() / 1024) + " KiB" : "mysqldump exit " + code;
+                String firstErr = "";
+                if (err.length() > 0) {
+                    try (var lines = java.nio.file.Files.lines(err.toPath())) {
+                        firstErr = lines.filter(l -> !l.isBlank()).findFirst().orElse("");
+                    }
+                }
+                if (ok || err.length() == 0) {
+                    //noinspection ResultOfMethodCallIgnored
+                    err.delete();
+                }
+                detail = ok ? (out.length() / 1024) + " KiB"
+                        : "mysqldump exit " + code + (firstErr.isEmpty() ? "" : ": " + firstErr);
             } catch (Exception ex) {
                 detail = ex.getMessage();
             }

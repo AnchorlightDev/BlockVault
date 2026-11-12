@@ -209,10 +209,8 @@ public final class BlockBrowser implements CommandExecutor, TabCompleter, Listen
 
     @SuppressWarnings("deprecation") // legacy text, like the rest of the plugin
     private void render(Player player, View view) {
-        String edition = plugin.database().edition();
         List<TargetEntry> list = new ArrayList<>();
         for (TargetEntry e : plugin.manifest().entries().values()) {
-            if (!edition.equals(e.edition())) continue; // reserved blocks from another edition
             if (!canSee(player, e.chapter())) continue;
             if (view.floor != 0 && e.chapter() != view.floor) continue;
             if (matches(view, e)) list.add(e);
@@ -284,8 +282,7 @@ public final class BlockBrowser implements CommandExecutor, TabCompleter, Listen
         if (featured) lore.add("§b⭐ Featured this week §7(double points)");
         lore.add("");
         if (!unlocked) {
-            int unlockPts = featured && plugin.getConfig().getBoolean("featured-block.double-first-contributor", true)
-                    ? pts * 2 : pts;
+            int unlockPts = plugin.featured() != null && plugin.featured().doublesUnlock(material) ? pts * 2 : pts;
             lore.add("§eStill needed!");
             lore.add("§7First to give it unlocks it for §f" + unlockPts + " §7point" + (unlockPts == 1 ? "" : "s") + ".");
         } else if (top == null) {
@@ -353,7 +350,7 @@ public final class BlockBrowser implements CommandExecutor, TabCompleter, Listen
 
     // ------------------------------------------------------------------ clicks
 
-    @EventHandler(ignoreCancelled = true)
+    @EventHandler
     public void onClick(InventoryClickEvent e) {
         if (!(e.getInventory().getHolder() instanceof View view)) return;
         e.setCancelled(true); // read-only, both halves of the screen
@@ -393,7 +390,7 @@ public final class BlockBrowser implements CommandExecutor, TabCompleter, Listen
         }
     }
 
-    @EventHandler(ignoreCancelled = true)
+    @EventHandler
     public void onDrag(InventoryDragEvent e) {
         if (e.getInventory().getHolder() instanceof View) e.setCancelled(true);
     }

@@ -124,7 +124,27 @@ public final class DonationBox implements Listener {
         }
         e.getInventory().clear();
         if (given.isEmpty()) return;
+        // Closed by a disconnect or a shutdown/reload: an async write may never get
+        // to finish (or hand anything back), so put the items straight back in the
+        // player's inventory instead - it's saved with them.
+        if (!plugin.isEnabled() || e.getReason() == InventoryCloseEvent.Reason.DISCONNECT) {
+            putBack(player, given);
+            return;
+        }
         donate(player, given, "chest");
+    }
+
+    /** Close every open donation chest (returning its contents). Call from onDisable. */
+    public void closeAll() {
+        for (Player p : plugin.getServer().getOnlinePlayers()) {
+            if (p.getOpenInventory().getTopInventory().getHolder() instanceof Holder) p.closeInventory();
+        }
+    }
+
+    /** Straight into the inventory, overflow at their feet - no scheduler, safe during shutdown. */
+    private static void putBack(Player player, List<ItemStack> items) {
+        var leftover = player.getInventory().addItem(items.toArray(new ItemStack[0]));
+        leftover.values().forEach(it -> player.getWorld().dropItemNaturally(player.getLocation(), it));
     }
 
     /**
@@ -184,7 +204,7 @@ public final class DonationBox implements Listener {
                 TargetEntry entry = b.getKey();
                 int qty = b.getValue().stream().mapToInt(ItemStack::getAmount).sum();
                 int firstPoints = plugin.getConfig().getInt("points." + entry.rarity(), 1);
-                boolean featured = plugin.featured().isFeatured(entry.material());
+                boolean featured = plugin.featured().doublesUnlock(entry.material());
                 results.put(entry, db.submit(entry.material(), uuid, name, qty, firstPoints,
                         profileJson, method, featured));
             }
