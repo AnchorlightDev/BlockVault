@@ -2,6 +2,7 @@ package dev.anchorlight.blockvault;
 
 import dev.anchorlight.StoneLib.config.ConfigUpdater;
 
+import dev.anchorlight.blockvault.bonus.FeaturedService;
 import dev.anchorlight.blockvault.chapter.ChapterService;
 import dev.anchorlight.blockvault.commands.*;
 import dev.anchorlight.blockvault.db.Database;
@@ -15,6 +16,7 @@ import dev.anchorlight.blockvault.util.ScheduleUtil;
 import dev.anchorlight.blockvault.util.StartupValidation;
 import dev.anchorlight.blockvault.util.VaultUtil;
 import dev.anchorlight.blockvault.util.Webhook;
+import dev.anchorlight.blockvault.util.WeeklyBonusService;
 import org.bukkit.ChatColor;
 import org.bukkit.Location;
 import org.bukkit.World;
@@ -35,6 +37,8 @@ public final class BlockVault extends JavaPlugin {
     private ChapterService chapters;
     private DisplayService displays;
     private Webhook webhook;
+    private FeaturedService featured;
+    private WeeklyBonusService weekly;
     private Region region;
 
     public static BlockVault get() {
@@ -96,6 +100,8 @@ public final class BlockVault extends JavaPlugin {
         this.chapters = new ChapterService(this);
         this.webhook = new Webhook(this);
         this.displays = new DisplayService(this);
+        this.featured = new FeaturedService(this);
+        this.weekly = new WeeklyBonusService(this);
 
         StartupValidation.run(this);
 
@@ -121,6 +127,20 @@ public final class BlockVault extends JavaPlugin {
             PluginCommand pc = getCommand(c);
             if (pc != null) pc.setTabCompleter(admin);
         }
+        register("bvweekly", new WeeklyCommand(this));
+        dev.anchorlight.blockvault.gui.BlockBrowser browser = new dev.anchorlight.blockvault.gui.BlockBrowser(this);
+        getServer().getPluginManager().registerEvents(browser, this);
+        register("bvblocks", browser);
+        PluginCommand browserPc = getCommand("bvblocks");
+        if (browserPc != null) browserPc.setTabCompleter(browser);
+        FeaturedCommand featuredCmd = new FeaturedCommand(this);
+        register("bvfeatured", featuredCmd);
+        PluginCommand featuredPc = getCommand("bvfeatured");
+        if (featuredPc != null) featuredPc.setTabCompleter(featuredCmd);
+        MonitorCommand monitorCmd = new MonitorCommand(this);
+        register("bvmonitor", monitorCmd);
+        PluginCommand monitorPc = getCommand("bvmonitor");
+        if (monitorPc != null) monitorPc.setTabCompleter(monitorCmd);
 
         getServer().getPluginManager().registerEvents(new RegionProtectionListener(this), this);
         PlayerGuidanceListener guidance = new PlayerGuidanceListener(this);
@@ -130,8 +150,14 @@ public final class BlockVault extends JavaPlugin {
         forceLoadChunks(true);
         chapters.start();
         displays.start();
+        // Load the featured block, then redraw so the info board doesn't show "-".
+        getServer().getScheduler().runTaskAsynchronously(this, () -> {
+            featured.refresh();
+            getServer().getScheduler().runTask(this, () -> displays.refresh());
+        });
         ScheduleUtil.scheduleVaultStateTask(this, vaultUtil, fileUtil);
         ScheduleUtil.scheduleDailyLeaderboard(this);
+        ScheduleUtil.scheduleWeeklyBonus(this, weekly);
     }
 
     @Override
@@ -154,6 +180,14 @@ public final class BlockVault extends JavaPlugin {
 
     public DisplayService displays() {
         return displays;
+    }
+
+    public FeaturedService featured() {
+        return featured;
+    }
+
+    public WeeklyBonusService weekly() {
+        return weekly;
     }
 
     /**

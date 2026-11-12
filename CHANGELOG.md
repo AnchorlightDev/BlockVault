@@ -5,6 +5,84 @@ All notable changes to BlockVault are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-11-12
+
+### Added
+
+- **Weekly top-contributor bonus.** Every week (default Friday 9am Sydney, follows
+  daylight saving) the current top contributor of each unlocked block earns points,
+  so the competition keeps going between floor drops. 2 points per block, capped at
+  10 blocks per player per payout (20 points max); if a player leads more than 10,
+  the paid 10 are those where their lead over second place is biggest. The cap is
+  the same for everyone, including the overall leader, and resets each week. Every
+  payout line is logged to MySQL (`bv_weekly_payout`). Configure under
+  `weekly-bonus`. Staff can trigger or inspect it with `/bvweekly [run|status]`.
+- **Weekly featured block.** One block (configurable count) is featured each week,
+  rotated at the Friday payout and announced with it. It is chosen from unlocked
+  floors, favouring blocks with few or no contributions. While featured, its
+  first-contributor (unlock) points are doubled if still unclaimed, and its weekly
+  top-contributor bonus is 4 points instead of 2; it does not count toward the
+  10-block cap. Staff override with `/bvfeatured set <block>` / `clear`. Shown on
+  the info board via the new `{featured}` placeholder.
+- **Payout announcements.** After each payout a summary is broadcast in-game and
+  posted to Discord (via `discord.webhook-url`): who earned bonus points, how much,
+  the top movers, and next week's featured block. Paid players also get a personal
+  message with their block count and whether they hit the cap
+  (`weekly-bonus.announce-personal`).
+- **Contribution monitoring.** Every contribution is logged (player, block, amount,
+  submission method, timestamp) to `bv_contribution_log`. Staff review and correct
+  with `/bvmonitor history <player>`, `recent [n]`, `adjust <player> <block> <delta>`
+  and `remove <player> <block>`. Monitoring only - nothing is blocked automatically.
+  Toggle logging with `monitoring.enabled`.
+
+- **`/bvblocks` block browser.** A chest menu of every block on the open floors,
+  showing whether it's still needed, its rarity and points, the current top
+  contributor, how many you've given and how many more you'd need to take the top
+  spot. Filter by floor and by status (all / still needed / unlocked / blocks you top /
+  in your inventory), page through, and click a block to see where its niche is.
+  Featured blocks and blocks you top glow. `/bvblocks [needed|unlocked|top|carrying] [floor]`
+  opens it pre-filtered; alias `/bvbrowse`. Locked floors stay hidden (`blockvault.spoilers`).
+
+### Changed
+
+- **Tie-breaking is explicit everywhere.** On an equal amount of a block, the top
+  contributor is whoever reached that amount first (earliest timestamp). This was
+  already the live rule; it is now unit-tested and used for the weekly bonus too.
+- **Niche labels are clearer and thinner on the wall.** Labels are two lines (block
+  name + current top contributor) in light colours, full-bright, with a configurable
+  translucent background, and a reduced view range so distant labels stop stacking
+  into a wall of text. New keys: `display.label-view-range`, `display.label-brightness`,
+  `display.label-background`. They stay flat on the wall (billboard FIXED).
+- **End-of-season leader bonus is off by default** (`points.leader-bonus: 0`); the
+  weekly bonus now rewards top contributors. `/bvfinish` and its Discord post no
+  longer mention a bonus when it is 0. The info board shows the weekly rate and cap
+  via new `{weekly}` and `{cap}` placeholders.
+- **`/bvweekly run` needs `confirm`.** A manual run counts as that week's payout, so
+  it now warns and asks for `/bvweekly run confirm`.
+- **`/bvmonitor` finds players by the name they donated under** (from the vault's own
+  records, so offline donors work too), logs `adjust`/`remove` edits to
+  `bv_contribution_log`, and refreshes the niche heads straight away.
+
+### Fixed
+
+- **`/bvsubmit hand` took the items after recording the donation**, so a stack
+  dropped or moved away in between was still credited. Items are now taken first and
+  handed back if the write fails.
+- **Featured unlocks stored the undoubled points** on the unlock record, so
+  `/bvrevoke` refunded too little and `/bvhistory` / the monthly leaderboard were
+  wrong. The record now holds the points actually paid.
+- **Daily and weekly schedules drifted.** They ran on fixed tick periods, which run
+  late under lag (about 19 hours a week at 18 TPS) and ignored daylight saving. Both
+  now follow the real clock, checked once a minute, and pick up `/bvreload` changes.
+- **The first restart could pay a week the vault wasn't open for.** A missed payout
+  is now only caught up if its slot was after the vault was opened (`bv_state.started_at`).
+- **Info board showed last week's featured block** after a payout (and "-" right after
+  startup) until something else redrew it.
+- **Items returned to an offline player were lost on restart.** They are now kept in
+  `owed_items.yml` until the player rejoins.
+- **Exact ties are ordered the same in SQL and Java** (uuid as the final tie-break).
+- **Leaderboards no longer list players with 0 points.**
+
 ## [1.2.0] - 2026-11-08
 
 ### Added

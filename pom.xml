@@ -6,7 +6,7 @@
 
   <groupId>dev.anchorlight</groupId>
   <artifactId>blockvault</artifactId>
-  <version>1.2.0</version>
+  <version>1.3.0</version>
   <packaging>jar</packaging>
 
   <name>blockvault</name>
@@ -103,5 +103,13 @@
                 </exclusion>
             </exclusions>
         </dependency>
+
+    <!-- Unit tests for the pure payout/featured/tie-break logic (no server needed). -->
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <version>5.11.3</version>
+      <scope>test</scope>
+    </dependency>
     </dependencies>
 </project>

@@ -3,6 +3,10 @@ package dev.anchorlight.blockvault.db;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import dev.anchorlight.blockvault.BlockVault;
+import dev.anchorlight.blockvault.bonus.BlockSnapshot;
+import dev.anchorlight.blockvault.bonus.FeaturedPicker;
+import dev.anchorlight.blockvault.bonus.PayLine;
+import dev.anchorlight.blockvault.bonus.WeeklyBonus;
 import dev.anchorlight.blockvault.model.Manifest;
 import dev.anchorlight.blockvault.model.TargetEntry;
 
@@ -14,9 +18,15 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Random;
 import java.util.Set;
+import java.util.StringJoiner;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -127,6 +137,27 @@ public final class Database {
     private void migrate(Connection c) throws SQLException {
         ensureColumn(c, "bv_state", "finished", "TINYINT(1) NOT NULL DEFAULT 0");
         ensureColumn(c, "bv_state", "finished_at", "DATETIME NULL");
+        // 1.3.0 dev builds created the log without the staff-edit methods.
+        ensureEnumValue(c, "bv_contribution_log", "method", "adjust",
+                "ENUM('chest','hand','new','adjust','remove') NOT NULL");
+    }
+
+    /** Widen an ENUM column if {@code value} isn't one of its values yet. */
+    private void ensureEnumValue(Connection c, String table, String column, String value,
+                                 String definition) throws SQLException {
+        try (PreparedStatement ps = c.prepareStatement(
+                "SELECT column_type FROM information_schema.columns "
+                + "WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?")) {
+            ps.setString(1, table);
+            ps.setString(2, column);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (!rs.next() || rs.getString(1).contains("'" + value + "'")) return;
+            }
+        }
+        try (Statement st = c.createStatement()) {
+            st.execute("ALTER TABLE " + table + " MODIFY COLUMN " + column + " " + definition);
+        }
+        plugin.getLogger().info("Migrated " + table + "." + column + ": added '" + value + "'.");
     }
 
     private void ensureColumn(Connection c, String table, String column, String definition) throws SQLException {
@@ -333,7 +364,7 @@ public final class Database {
     }
 
     /** Ranking used for every "most donated" question: quantity, then who got there first. */
-    private static final String TOP_ORDER = "d.quantity DESC, d.last_at ASC";
+    private static final String TOP_ORDER = "d.quantity DESC, d.last_at ASC, d.uuid ASC";
 
     /**
      * material -> its top donor, for every donated block in this edition.
@@ -438,10 +469,15 @@ public final class Database {
      * earns {@code firstPoints}. Every donation, first or repeat, adds to the
      * donor's bv_donation tally, which decides who wears the niche head.
      *
-     * @param profileJson cached skin profile, or null
+     * @param profileJson    cached skin profile, or null
+     * @param method         how it was submitted ('chest', 'hand' or 'new'), for the
+     *                       monitoring log
+     * @param featuredDouble true if this block is featured this week, doubling the
+     *                       first-contributor points on an unlock
      */
     public SubmitResult submit(String material, UUID uuid, String name, int quantity,
-                               int firstPoints, String profileJson) {
+                               int firstPoints, String profileJson, String method,
+                               boolean featuredDouble) {
         byte[] id = toBytes(uuid);
         try (Connection c = ds.getConnection()) {
             c.setAutoCommit(false);
@@ -457,6 +493,9 @@ public final class Database {
                     ps.executeUpdate();
                 }
 
+                // Featured blocks pay double on the unlock. Stored on the submission
+                // row as paid, so /bvrevoke refunds exactly what was given.
+                int unlockPoints = featuredDouble ? firstPoints * 2 : firstPoints;
                 boolean first = true;
                 try (PreparedStatement ps = c.prepareStatement(
                         "INSERT INTO bv_submission (material,edition,uuid,points,profile) "
@@ -464,7 +503,7 @@ public final class Database {
                     ps.setString(1, material);
                     ps.setString(2, edition);
                     ps.setBytes(3, id);
-                    ps.setInt(4, firstPoints);
+                    ps.setInt(4, unlockPoints);
                     if (profileJson == null) ps.setNull(5, java.sql.Types.VARCHAR);
                     else ps.setString(5, profileJson);
                     ps.executeUpdate();
@@ -474,7 +513,7 @@ public final class Database {
                     if (dup.getErrorCode() != ER_DUP_ENTRY) throw dup;
                     first = false;
                 }
-                int points = first ? firstPoints : 0;
+                int points = first ? unlockPoints : 0;
 
                 try (PreparedStatement ps = c.prepareStatement(
                         "INSERT INTO bv_donation (material,edition,uuid,quantity,last_at) "
@@ -508,6 +547,22 @@ public final class Database {
                     ps.setInt(4, points);
                     ps.setInt(5, quantity);
                     ps.executeUpdate();
+                }
+
+                // Append-only monitoring log of every contribution (same transaction,
+                // so the log can never disagree with the tally). No-op if disabled.
+                if (plugin.getConfig().getBoolean("monitoring.enabled", true)) {
+                    try (PreparedStatement ps = c.prepareStatement(
+                            "INSERT INTO bv_contribution_log (edition,uuid,material,amount,method,first_unlock) "
+                            + "VALUES (?,?,?,?,?,?)")) {
+                        ps.setString(1, edition);
+                        ps.setBytes(2, id);
+                        ps.setString(3, material);
+                        ps.setInt(4, quantity);
+                        ps.setString(5, normaliseMethod(method));
+                        ps.setBoolean(6, first);
+                        ps.executeUpdate();
+                    }
                 }
 
                 long mine = 0;
@@ -980,6 +1035,7 @@ public final class Database {
                 try (ResultSet rs = ps.executeQuery()) {
                     if (!rs.next()) return -1; // never contributed
                     long myPoints = rs.getLong(1);
+                    if (myPoints <= 0) return -1; // not on the leaderboard yet
                     try (PreparedStatement r = c.prepareStatement(
                             "SELECT COUNT(*) + 1 FROM bv_contributor WHERE points > ?")) {
                         r.setLong(1, myPoints);
@@ -993,6 +1049,563 @@ public final class Database {
             plugin.getLogger().severe("Rank query failed: " + e.getMessage());
             return -1;
         }
+    }
+
+    // ----------------------------------------------------------------- weekly payout
+
+    /** One paid line, with the player's name resolved for announcements. */
+    public record PayoutLine(UUID uuid, String name, String material, int points,
+                             boolean featured, long margin) {}
+
+    /**
+     * Result of a weekly payout. {@code alreadyRan} means this week was already
+     * paid (the run is idempotent). {@code featuredChosen} is next week's featured
+     * block(s). {@code lines} drive the in-game and Discord announcements.
+     */
+    public record PayoutResult(boolean ok, boolean alreadyRan, String weekKey,
+                               java.util.List<PayoutLine> lines, java.util.List<String> featuredChosen,
+                               java.util.Set<UUID> cappedPlayers, int totalPoints, int players) {
+        static PayoutResult error() {
+            return new PayoutResult(false, false, null, java.util.List.of(), java.util.List.of(),
+                    java.util.Set.of(), 0, 0);
+        }
+        static PayoutResult already(String weekKey) {
+            return new PayoutResult(true, true, weekKey, java.util.List.of(), java.util.List.of(),
+                    java.util.Set.of(), 0, 0);
+        }
+    }
+
+    /**
+     * Run the weekly top-contributor payout for {@code weekKey}, then rotate the
+     * featured block into {@code nextWeekKey}. One transaction, serialised on the
+     * bv_state row like {@link #finish}. A row in bv_payout_run for {@code weekKey}
+     * means this week was already paid, so a restart or a double trigger is a
+     * no-op - the payout is never applied twice. Blocking - call async.
+     *
+     * @param openChapters the unlocked floors (from {@link dev.anchorlight.blockvault.chapter.ChapterService},
+     *                     not the database, so chapter 1 is included)
+     * @param rng          featured-pick randomness; injected for tests
+     */
+    public PayoutResult runWeeklyPayout(String weekKey, String nextWeekKey, Set<Integer> openChapters,
+                                        int pointsPerBlock, int capBlocks, int featuredPoints,
+                                        int featuredCount, Random rng) {
+        if (openChapters == null || openChapters.isEmpty()) {
+            return new PayoutResult(true, false, weekKey, java.util.List.of(), java.util.List.of(),
+                    java.util.Set.of(), 0, 0);
+        }
+        String inClause = intInClause(openChapters);
+        try (Connection c = ds.getConnection()) {
+            c.setAutoCommit(false);
+            try {
+                // Serialise payouts on the state row, like finish().
+                try (PreparedStatement ps = c.prepareStatement(
+                        "SELECT started FROM bv_state WHERE edition = ? FOR UPDATE")) {
+                    ps.setString(1, edition);
+                    try (ResultSet rs = ps.executeQuery()) { rs.next(); }
+                }
+                // Idempotency: has this week already been paid?
+                try (PreparedStatement ps = c.prepareStatement(
+                        "SELECT 1 FROM bv_payout_run WHERE edition = ? AND week_key = ?")) {
+                    ps.setString(1, edition);
+                    ps.setString(2, weekKey);
+                    try (ResultSet rs = ps.executeQuery()) {
+                        if (rs.next()) { c.rollback(); return PayoutResult.already(weekKey); }
+                    }
+                }
+
+                // Featured block(s) active over the week being paid = the most
+                // recently set batch (by set_at), read before we rotate below.
+                Set<String> featuredNow = new HashSet<>();
+                try (PreparedStatement ps = c.prepareStatement(
+                        "SELECT material FROM bv_featured WHERE edition = ? AND set_at = "
+                        + "(SELECT MAX(set_at) FROM bv_featured WHERE edition = ?)")) {
+                    ps.setString(1, edition);
+                    ps.setString(2, edition);
+                    try (ResultSet rs = ps.executeQuery()) {
+                        while (rs.next()) featuredNow.add(rs.getString(1));
+                    }
+                }
+
+                // Snapshot: each unlocked block's top contributor + second place's quantity.
+                List<BlockSnapshot> snaps = new ArrayList<>();
+                Map<UUID, String> names = new LinkedHashMap<>();
+                try (PreparedStatement ps = c.prepareStatement(
+                        "SELECT material, uuid, last_name, quantity, second_qty FROM ("
+                        + " SELECT d.material, d.uuid, p.last_name, d.quantity,"
+                        + "  ROW_NUMBER() OVER (PARTITION BY d.material ORDER BY " + TOP_ORDER + ") AS rn,"
+                        + "  LEAD(d.quantity) OVER (PARTITION BY d.material ORDER BY " + TOP_ORDER + ") AS second_qty"
+                        + " FROM bv_donation d"
+                        + " JOIN bv_target t ON t.material = d.material AND t.edition = d.edition"
+                        + " JOIN bv_contributor p ON p.uuid = d.uuid"
+                        + " WHERE d.edition = ? AND d.quantity > 0 AND t.chapter IN " + inClause
+                        + ") ranked WHERE rn = 1")) {
+                    ps.setString(1, edition);
+                    try (ResultSet rs = ps.executeQuery()) {
+                        while (rs.next()) {
+                            String material = rs.getString(1);
+                            UUID uuid = fromBytes(rs.getBytes(2));
+                            names.put(uuid, rs.getString(3));
+                            long qty = rs.getLong(4);
+                            long second = rs.getLong(5); // 0 when SQL NULL (single donor)
+                            snaps.add(new BlockSnapshot(material, uuid, qty, second, featuredNow.contains(material)));
+                        }
+                    }
+                }
+
+                WeeklyBonus.Result awarded =
+                        WeeklyBonus.award(snaps, pointsPerBlock, featuredPoints, capBlocks);
+
+                Map<UUID, Integer> perPlayer = new LinkedHashMap<>();
+                for (PayLine l : awarded.lines()) perPlayer.merge(l.uuid(), l.points(), Integer::sum);
+
+                try (PreparedStatement ps = c.prepareStatement(
+                        "UPDATE bv_contributor SET points = points + ? WHERE uuid = ?")) {
+                    for (var e : perPlayer.entrySet()) {
+                        ps.setInt(1, e.getValue());
+                        ps.setBytes(2, toBytes(e.getKey()));
+                        ps.addBatch();
+                    }
+                    ps.executeBatch();
+                }
+
+                List<PayoutLine> lines = new ArrayList<>();
+                try (PreparedStatement ps = c.prepareStatement(
+                        "INSERT INTO bv_weekly_payout (edition,week_key,uuid,material,points,featured,lead_margin) "
+                        + "VALUES (?,?,?,?,?,?,?)")) {
+                    for (PayLine l : awarded.lines()) {
+                        ps.setString(1, edition);
+                        ps.setString(2, weekKey);
+                        ps.setBytes(3, toBytes(l.uuid()));
+                        ps.setString(4, l.material());
+                        ps.setInt(5, l.points());
+                        ps.setBoolean(6, l.featured());
+                        ps.setLong(7, l.margin());
+                        ps.addBatch();
+                        lines.add(new PayoutLine(l.uuid(), names.get(l.uuid()), l.material(),
+                                l.points(), l.featured(), l.margin()));
+                    }
+                    ps.executeBatch();
+                }
+
+                int totalPoints = perPlayer.values().stream().mapToInt(Integer::intValue).sum();
+                int players = perPlayer.size();
+
+                try (PreparedStatement ps = c.prepareStatement(
+                        "INSERT INTO bv_payout_run (edition,week_key,total_points,players) VALUES (?,?,?,?)")) {
+                    ps.setString(1, edition);
+                    ps.setString(2, weekKey);
+                    ps.setInt(3, totalPoints);
+                    ps.setInt(4, players);
+                    ps.executeUpdate();
+                }
+
+                // Rotate: next week's featured block(s), favouring the least contributed,
+                // excluding this week's pick so it actually changes.
+                List<String> nextFeatured =
+                        pickFeatured(c, inClause, featuredNow, featuredCount, rng);
+                if (!nextFeatured.isEmpty()) {
+                    // One shared set_at so the whole pick is a single "set" and
+                    // becomes current the moment this transaction commits.
+                    java.sql.Timestamp setAt = new java.sql.Timestamp(System.currentTimeMillis());
+                    try (PreparedStatement ps = c.prepareStatement(
+                            "INSERT INTO bv_featured (edition,week_key,material,set_at,set_by) "
+                            + "VALUES (?,?,?,?,NULL)")) {
+                        for (String m : nextFeatured) {
+                            ps.setString(1, edition);
+                            ps.setString(2, nextWeekKey);
+                            ps.setString(3, m);
+                            ps.setTimestamp(4, setAt);
+                            ps.addBatch();
+                        }
+                        ps.executeBatch();
+                    }
+                }
+
+                try (PreparedStatement ps = c.prepareStatement(
+                        "INSERT INTO bv_audit (actor,action,detail) "
+                        + "VALUES (NULL,'weekly_payout',JSON_OBJECT('week',?,'points',?,'players',?))")) {
+                    ps.setString(1, weekKey);
+                    ps.setInt(2, totalPoints);
+                    ps.setInt(3, players);
+                    ps.executeUpdate();
+                }
+
+                c.commit();
+                return new PayoutResult(true, false, weekKey, lines, nextFeatured,
+                        awarded.cappedPlayers(), totalPoints, players);
+            } catch (SQLException e) {
+                c.rollback();
+                throw e;
+            } finally {
+                c.setAutoCommit(true);
+            }
+        } catch (SQLException e) {
+            plugin.getLogger().severe("Weekly payout failed for " + weekKey + ": " + e.getMessage());
+            return PayoutResult.error();
+        }
+    }
+
+    /** Candidate featured blocks on the open floors, weighted by donor count. Same connection/transaction. */
+    private List<String> pickFeatured(Connection c, String inClause, Set<String> exclude,
+                                      int count, Random rng) throws SQLException {
+        if (count < 1) return java.util.List.of();
+        List<FeaturedPicker.Candidate> candidates = new ArrayList<>();
+        try (PreparedStatement ps = c.prepareStatement(
+                "SELECT t.material, COUNT(d.uuid) AS donors "
+                + "FROM bv_target t "
+                + "LEFT JOIN bv_donation d ON d.material = t.material AND d.edition = t.edition AND d.quantity > 0 "
+                + "WHERE t.edition = ? AND t.chapter IN " + inClause + " "
+                + "GROUP BY t.material")) {
+            ps.setString(1, edition);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    candidates.add(new FeaturedPicker.Candidate(rs.getString(1), rs.getLong(2)));
+                }
+            }
+        }
+        return FeaturedPicker.pick(candidates, exclude, count, rng == null ? new Random() : rng);
+    }
+
+    /** `(1,2,3)` from a set of chapter numbers - values are ints we control, so safe to inline. */
+    private static String intInClause(Set<Integer> values) {
+        StringJoiner sj = new StringJoiner(",", "(", ")");
+        for (int v : values) sj.add(Integer.toString(v));
+        return sj.toString();
+    }
+
+    public record PayoutRunRow(String weekKey, java.sql.Timestamp runAt, int totalPoints, int players) {}
+
+    /** The most recent weekly payout run, or null if none yet. Blocking. */
+    public PayoutRunRow lastPayoutRun() {
+        try (Connection c = ds.getConnection();
+             PreparedStatement ps = c.prepareStatement(
+                     "SELECT week_key, run_at, total_points, players FROM bv_payout_run "
+                     + "WHERE edition = ? ORDER BY run_at DESC LIMIT 1")) {
+            ps.setString(1, edition);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    return new PayoutRunRow(rs.getString(1), rs.getTimestamp(2), rs.getInt(3), rs.getInt(4));
+                }
+            }
+        } catch (SQLException e) {
+            plugin.getLogger().severe("Payout-run lookup failed: " + e.getMessage());
+        }
+        return null;
+    }
+
+    /** True if a payout has already run for {@code weekKey}. Fails safe (true) on error. Blocking. */
+    public boolean hasPayoutRun(String weekKey) {
+        try (Connection c = ds.getConnection();
+             PreparedStatement ps = c.prepareStatement(
+                     "SELECT 1 FROM bv_payout_run WHERE edition = ? AND week_key = ?")) {
+            ps.setString(1, edition);
+            ps.setString(2, weekKey);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next();
+            }
+        } catch (SQLException e) {
+            plugin.getLogger().severe("Payout-run check failed: " + e.getMessage());
+            return true; // fail safe: assume done rather than risk a double pay
+        }
+    }
+
+    // ----------------------------------------------------------------- featured block
+
+    /** The current featured block(s): the most recently set batch. Blocking. */
+    public java.util.List<String> currentFeatured() {
+        java.util.List<String> out = new ArrayList<>();
+        try (Connection c = ds.getConnection();
+             PreparedStatement ps = c.prepareStatement(
+                     "SELECT material FROM bv_featured WHERE edition = ? AND set_at = "
+                     + "(SELECT MAX(set_at) FROM bv_featured WHERE edition = ?) ORDER BY material")) {
+            ps.setString(1, edition);
+            ps.setString(2, edition);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) out.add(rs.getString(1));
+            }
+        } catch (SQLException e) {
+            plugin.getLogger().severe("Featured lookup failed: " + e.getMessage());
+        }
+        return out;
+    }
+
+    /**
+     * Staff override: make {@code materials} the current featured block(s) now.
+     * They share one set_at, so they become the latest batch and take effect at
+     * once. {@code weekKey} is recorded for the audit. {@code by} = null for auto.
+     * Blocking.
+     */
+    public boolean setFeatured(String weekKey, java.util.List<String> materials, UUID by) {
+        if (materials == null || materials.isEmpty()) return false;
+        java.sql.Timestamp setAt = new java.sql.Timestamp(System.currentTimeMillis());
+        try (Connection c = ds.getConnection();
+             PreparedStatement ps = c.prepareStatement(
+                     "INSERT INTO bv_featured (edition,week_key,material,set_at,set_by) VALUES (?,?,?,?,?) "
+                     + "ON DUPLICATE KEY UPDATE set_at=VALUES(set_at), set_by=VALUES(set_by)")) {
+            for (String m : materials) {
+                ps.setString(1, edition);
+                ps.setString(2, weekKey);
+                ps.setString(3, m);
+                ps.setTimestamp(4, setAt);
+                if (by == null) ps.setNull(5, java.sql.Types.BINARY);
+                else ps.setBytes(5, toBytes(by));
+                ps.addBatch();
+            }
+            ps.executeBatch();
+        } catch (SQLException e) {
+            plugin.getLogger().severe("Featured set failed: " + e.getMessage());
+            return false;
+        }
+        audit(by, "featured_set", materials.get(0),
+                "{\"week\":\"" + weekKey + "\",\"count\":" + materials.size() + "}");
+        return true;
+    }
+
+    /** Remove the current featured batch, so the previous one (if any) is current again. Blocking. */
+    public boolean clearFeatured(UUID by) {
+        try (Connection c = ds.getConnection();
+             PreparedStatement ps = c.prepareStatement(
+                     "DELETE FROM bv_featured WHERE edition = ? AND set_at = "
+                     + "(SELECT s FROM (SELECT MAX(set_at) AS s FROM bv_featured WHERE edition = ?) x)")) {
+            ps.setString(1, edition);
+            ps.setString(2, edition);
+            int n = ps.executeUpdate();
+            if (n > 0) audit(by, "featured_clear", null, "{\"removed\":" + n + "}");
+            return n > 0;
+        } catch (SQLException e) {
+            plugin.getLogger().severe("Featured clear failed: " + e.getMessage());
+            return false;
+        }
+    }
+
+    // ----------------------------------------------------------------- monitoring
+
+    public record ContribRow(UUID uuid, String name, String material, int amount,
+                             String method, boolean firstUnlock, java.sql.Timestamp ts) {}
+
+    /** A player's most recent contributions, newest first. Blocking. */
+    public java.util.List<ContribRow> contributionHistory(UUID uuid, int limit) {
+        java.util.List<ContribRow> out = new ArrayList<>();
+        try (Connection c = ds.getConnection();
+             PreparedStatement ps = c.prepareStatement(
+                     "SELECT l.uuid, p.last_name, l.material, l.amount, l.method, l.first_unlock, l.ts "
+                     + "FROM bv_contribution_log l JOIN bv_contributor p ON p.uuid = l.uuid "
+                     + "WHERE l.edition = ? AND l.uuid = ? ORDER BY l.ts DESC LIMIT ?")) {
+            ps.setString(1, edition);
+            ps.setBytes(2, toBytes(uuid));
+            ps.setInt(3, limit);
+            readContribRows(ps, out);
+        } catch (SQLException e) {
+            plugin.getLogger().severe("Contribution history failed: " + e.getMessage());
+        }
+        return out;
+    }
+
+    /** The most recent contributions across all players, newest first. Blocking. */
+    public java.util.List<ContribRow> recentContributions(int limit) {
+        java.util.List<ContribRow> out = new ArrayList<>();
+        try (Connection c = ds.getConnection();
+             PreparedStatement ps = c.prepareStatement(
+                     "SELECT l.uuid, p.last_name, l.material, l.amount, l.method, l.first_unlock, l.ts "
+                     + "FROM bv_contribution_log l JOIN bv_contributor p ON p.uuid = l.uuid "
+                     + "WHERE l.edition = ? ORDER BY l.ts DESC LIMIT ?")) {
+            ps.setString(1, edition);
+            ps.setInt(2, limit);
+            readContribRows(ps, out);
+        } catch (SQLException e) {
+            plugin.getLogger().severe("Recent contributions failed: " + e.getMessage());
+        }
+        return out;
+    }
+
+    private void readContribRows(PreparedStatement ps, java.util.List<ContribRow> out) throws SQLException {
+        try (ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                out.add(new ContribRow(fromBytes(rs.getBytes(1)), rs.getString(2), rs.getString(3),
+                        rs.getInt(4), rs.getString(5), rs.getBoolean(6), rs.getTimestamp(7)));
+            }
+        }
+    }
+
+    /**
+     * Adjust one player's donation tally for a block by {@code delta} (floored at
+     * 0), and their items_given to match. Does not touch the unlock or its points
+     * (use {@link #revoke}). Returns false if they have no donation of that block.
+     * Blocking.
+     */
+    public boolean adjustDonation(UUID uuid, String material, int delta, UUID actor) {
+        try (Connection c = ds.getConnection()) {
+            c.setAutoCommit(false);
+            try {
+                long current;
+                try (PreparedStatement ps = c.prepareStatement(
+                        "SELECT quantity FROM bv_donation WHERE material=? AND edition=? AND uuid=? FOR UPDATE")) {
+                    ps.setString(1, material);
+                    ps.setString(2, edition);
+                    ps.setBytes(3, toBytes(uuid));
+                    try (ResultSet rs = ps.executeQuery()) {
+                        if (!rs.next()) { c.rollback(); return false; }
+                        current = rs.getLong(1);
+                    }
+                }
+                long updated = Math.max(0, current + delta);
+                long applied = updated - current; // real change after flooring
+                try (PreparedStatement ps = c.prepareStatement(
+                        "UPDATE bv_donation SET quantity = ? WHERE material=? AND edition=? AND uuid=?")) {
+                    ps.setLong(1, updated);
+                    ps.setString(2, material);
+                    ps.setString(3, edition);
+                    ps.setBytes(4, toBytes(uuid));
+                    ps.executeUpdate();
+                }
+                try (PreparedStatement ps = c.prepareStatement(
+                        "UPDATE bv_contributor SET items_given = GREATEST(0, CAST(items_given AS SIGNED) + ?) "
+                        + "WHERE uuid = ?")) {
+                    ps.setLong(1, applied);
+                    ps.setBytes(2, toBytes(uuid));
+                    ps.executeUpdate();
+                }
+                logContribution(c, uuid, material, applied, "adjust");
+                c.commit();
+                audit(actor, "contrib_adjust", material,
+                        "{\"delta\":" + delta + ",\"from\":" + current + ",\"to\":" + updated + "}");
+                return true;
+            } catch (SQLException e) {
+                c.rollback();
+                throw e;
+            } finally {
+                c.setAutoCommit(true);
+            }
+        } catch (SQLException e) {
+            plugin.getLogger().severe("Adjust donation failed: " + e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Remove one player's whole donation tally for a block and take those items
+     * off their items_given. Leaves the unlock/points alone (use {@link #revoke}
+     * to reverse an unlock). Returns false if there was nothing to remove. Blocking.
+     */
+    public boolean removeDonation(UUID uuid, String material, UUID actor) {
+        try (Connection c = ds.getConnection()) {
+            c.setAutoCommit(false);
+            try {
+                long qty;
+                try (PreparedStatement ps = c.prepareStatement(
+                        "SELECT quantity FROM bv_donation WHERE material=? AND edition=? AND uuid=? FOR UPDATE")) {
+                    ps.setString(1, material);
+                    ps.setString(2, edition);
+                    ps.setBytes(3, toBytes(uuid));
+                    try (ResultSet rs = ps.executeQuery()) {
+                        if (!rs.next()) { c.rollback(); return false; }
+                        qty = rs.getLong(1);
+                    }
+                }
+                try (PreparedStatement ps = c.prepareStatement(
+                        "DELETE FROM bv_donation WHERE material=? AND edition=? AND uuid=?")) {
+                    ps.setString(1, material);
+                    ps.setString(2, edition);
+                    ps.setBytes(3, toBytes(uuid));
+                    ps.executeUpdate();
+                }
+                try (PreparedStatement ps = c.prepareStatement(
+                        "UPDATE bv_contributor SET items_given = GREATEST(0, CAST(items_given AS SIGNED) - ?) "
+                        + "WHERE uuid = ?")) {
+                    ps.setLong(1, qty);
+                    ps.setBytes(2, toBytes(uuid));
+                    ps.executeUpdate();
+                }
+                logContribution(c, uuid, material, -qty, "remove");
+                c.commit();
+                audit(actor, "contrib_remove", material, "{\"quantity\":" + qty + "}");
+                return true;
+            } catch (SQLException e) {
+                c.rollback();
+                throw e;
+            } finally {
+                c.setAutoCommit(true);
+            }
+        } catch (SQLException e) {
+            plugin.getLogger().severe("Remove donation failed: " + e.getMessage());
+            return false;
+        }
+    }
+
+    private static String normaliseMethod(String method) {
+        if (method == null) return "chest";
+        return switch (method) {
+            case "hand", "new", "chest", "adjust", "remove" -> method;
+            default -> "chest";
+        };
+    }
+
+    /** Monitoring-log row for a staff tally edit (same transaction). No-op if monitoring is off. */
+    private void logContribution(Connection c, UUID uuid, String material, long amount,
+                                 String method) throws SQLException {
+        if (!plugin.getConfig().getBoolean("monitoring.enabled", true) || amount == 0) return;
+        try (PreparedStatement ps = c.prepareStatement(
+                "INSERT INTO bv_contribution_log (edition,uuid,material,amount,method,first_unlock) "
+                + "VALUES (?,?,?,?,?,0)")) {
+            ps.setString(1, edition);
+            ps.setBytes(2, toBytes(uuid));
+            ps.setString(3, material);
+            ps.setLong(4, amount);
+            ps.setString(5, normaliseMethod(method));
+            ps.executeUpdate();
+        }
+    }
+
+    /**
+     * A contributor's UUID by the name they last donated under (case-insensitive,
+     * most recently seen first), or null. Blocking.
+     */
+    public UUID uuidByName(String name) {
+        try (Connection c = ds.getConnection();
+             PreparedStatement ps = c.prepareStatement(
+                     "SELECT uuid FROM bv_contributor WHERE LOWER(last_name) = LOWER(?) "
+                     + "ORDER BY last_seen DESC LIMIT 1")) {
+            ps.setString(1, name);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? fromBytes(rs.getBytes(1)) : null;
+            }
+        } catch (SQLException e) {
+            plugin.getLogger().severe("Name lookup failed: " + e.getMessage());
+            return null;
+        }
+    }
+
+    /** material -> how many of it {@code uuid} has given, for this edition. Null on failure. Blocking. */
+    public java.util.Map<String, Long> myDonations(UUID uuid) {
+        java.util.Map<String, Long> out = new java.util.HashMap<>();
+        try (Connection c = ds.getConnection();
+             PreparedStatement ps = c.prepareStatement(
+                     "SELECT material, quantity FROM bv_donation WHERE edition = ? AND uuid = ? AND quantity > 0")) {
+            ps.setString(1, edition);
+            ps.setBytes(2, toBytes(uuid));
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) out.put(rs.getString(1), rs.getLong(2));
+            }
+        } catch (SQLException e) {
+            plugin.getLogger().severe("Donation lookup failed: " + e.getMessage());
+            return null;
+        }
+        return out;
+    }
+
+    /** When the vault was last opened with /bvstart, or null if never. Blocking. */
+    public java.time.Instant startedAt() {
+        try (Connection c = ds.getConnection();
+             PreparedStatement ps = c.prepareStatement(
+                     "SELECT started_at FROM bv_state WHERE edition = ?")) {
+            ps.setString(1, edition);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next() && rs.getTimestamp(1) != null) return rs.getTimestamp(1).toInstant();
+            }
+        } catch (SQLException e) {
+            plugin.getLogger().severe("Start-time lookup failed: " + e.getMessage());
+        }
+        return null;
     }
 
     public void close() {

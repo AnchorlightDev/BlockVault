@@ -288,9 +288,21 @@ public final class DisplayService {
                 .replace("{common}", String.valueOf(cfg.getInt("points.common", 1)))
                 .replace("{uncommon}", String.valueOf(cfg.getInt("points.uncommon", 5)))
                 .replace("{rare}", String.valueOf(cfg.getInt("points.rare", 10)))
-                .replace("{bonus}", String.valueOf(cfg.getInt("points.leader-bonus", 5)));
+                .replace("{bonus}", String.valueOf(cfg.getInt("points.leader-bonus", 0)))
+                .replace("{featured}", featuredName())
+                .replace("{weekly}", String.valueOf(cfg.getInt("weekly-bonus.points-per-block", 2)))
+                .replace("{cap}", String.valueOf(cfg.getInt("weekly-bonus.cap-blocks", 10)));
         text = org.bukkit.ChatColor.translateAlternateColorCodes('&', text);
         upsertBoard(block, "info", text, (float) cfg.getDouble("info-board.scale", 1.0));
+    }
+
+    /** This week's featured block as a display name, or "-" if none. */
+    private String featuredName() {
+        if (plugin.featured() == null) return "-";
+        String material = plugin.featured().displayMaterial();
+        if (material == null) return "-";
+        Material m = Material.matchMaterial(material);
+        return m != null ? dev.anchorlight.blockvault.util.VaultUtil.formatMaterialName(m) : material;
     }
 
     /** Find-or-spawn the tagged board above {@code block} and set its text. */

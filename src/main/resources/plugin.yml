@@ -1,5 +1,5 @@
 name: BlockVault
-version: '1.2.0'
+version: '1.3.0'
 main: dev.anchorlight.blockvault.BlockVault
 api-version: '26.2'
 libraries:
@@ -68,6 +68,22 @@ commands:
     description: Write a timestamped database dump.
     usage: /bvbackup
     permission: blockvault.backup
+  bvblocks:
+    description: Browse every block in a menu - what's needed, who's top, and what you'd need to give.
+    usage: /bvblocks [needed|unlocked|top|carrying] [floor]
+    aliases: [bvbrowse]
+  bvweekly:
+    description: Run the weekly top-contributor payout now, or show its status.
+    usage: /bvweekly [run|status]
+    permission: blockvault.weekly
+  bvfeatured:
+    description: Show or override this week's featured block.
+    usage: /bvfeatured [set <block>|clear]
+    permission: blockvault.featured
+  bvmonitor:
+    description: Review contribution history and adjust or remove contributions.
+    usage: /bvmonitor <history <player>|recent [n]|adjust <player> <block> <delta>|remove <player> <block>>
+    permission: blockvault.monitor
 permissions:
   blockvault.submit:
     description: Allows submitting blocks to the vault.
@@ -122,6 +138,18 @@ permissions:
     default: op
   blockvault.setup:
     description: Allows building the vault layout with /bvsetup (before /bvstart).
+    default: op
+  blockvault.blocks:
+    description: Allows browsing the vault's blocks in a menu.
+    default: true
+  blockvault.weekly:
+    description: Allows running the weekly payout and viewing its status.
+    default: op
+  blockvault.featured:
+    description: Allows showing and overriding the featured block.
+    default: op
+  blockvault.monitor:
+    description: Allows reviewing and adjusting contributions.
     default: op
   blockvault.build:
     description: Bypass vault build/interaction protection.

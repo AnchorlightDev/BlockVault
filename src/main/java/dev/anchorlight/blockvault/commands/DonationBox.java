@@ -16,6 +16,10 @@ import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemStack;
 
+import org.bukkit.configuration.file.YamlConfiguration;
+
+import java.io.File;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -39,12 +43,54 @@ public final class DonationBox implements Listener {
 
     private final BlockVault plugin;
     private final VaultUtil vaultUtil;
-    /** Items owed to players who logged off before a failed write could hand them back. */
+    /**
+     * Items owed to players who logged off before a failed write could hand them
+     * back. Mirrored to {@code owed_items.yml} so a restart doesn't lose them.
+     */
     private final Map<UUID, List<ItemStack>> owed = new ConcurrentHashMap<>();
+    private final File owedFile;
 
     public DonationBox(BlockVault plugin) {
         this.plugin = plugin;
         this.vaultUtil = new VaultUtil(plugin);
+        this.owedFile = new File(plugin.getDataFolder(), "owed_items.yml");
+        loadOwed();
+    }
+
+    private void loadOwed() {
+        if (!owedFile.exists()) return;
+        YamlConfiguration y = YamlConfiguration.loadConfiguration(owedFile);
+        for (String key : y.getKeys(false)) {
+            try {
+                UUID uuid = UUID.fromString(key);
+                List<ItemStack> items = new ArrayList<>();
+                List<?> raw = y.getList(key);
+                if (raw != null) for (Object o : raw) if (o instanceof ItemStack it) items.add(it);
+                if (!items.isEmpty()) owed.put(uuid, items);
+            } catch (IllegalArgumentException ignored) {
+                // not a uuid key - skip
+            }
+        }
+        if (!owed.isEmpty()) {
+            plugin.getLogger().info("Holding returned donation items for " + owed.size()
+                    + " offline player(s) until they rejoin.");
+        }
+    }
+
+    /** Write the owed items to disk (main thread; small file). */
+    private void saveOwed() {
+        YamlConfiguration y = new YamlConfiguration();
+        owed.forEach((uuid, items) -> y.set(uuid.toString(), new ArrayList<>(items)));
+        try {
+            y.save(owedFile);
+        } catch (IOException e) {
+            plugin.getLogger().severe("Could not save owed_items.yml: " + e.getMessage());
+        }
+    }
+
+    /** Hand items back to a player (or hold them until they rejoin). Main thread. */
+    void returnItems(Player player, List<ItemStack> items) {
+        giveBack(player, items);
     }
 
     /** Marks our menu so the close handler only reacts to it. */
@@ -78,14 +124,16 @@ public final class DonationBox implements Listener {
         }
         e.getInventory().clear();
         if (given.isEmpty()) return;
-        donate(player, given);
+        donate(player, given, "chest");
     }
 
     /**
      * Donate items already taken from the player (the chest, or
      * {@code /bvsubmit new}). Anything not recorded goes back to them.
+     *
+     * @param method how it was submitted ('chest' or 'new'), for the monitoring log
      */
-    void donate(Player player, List<ItemStack> given) {
+    void donate(Player player, List<ItemStack> given, String method) {
         // Conditions may have changed while the chest was open (left the vault, event closed...).
         if (!SubmitCommand.canSubmit(plugin, player)) {
             giveBack(player, given);
@@ -136,7 +184,9 @@ public final class DonationBox implements Listener {
                 TargetEntry entry = b.getKey();
                 int qty = b.getValue().stream().mapToInt(ItemStack::getAmount).sum();
                 int firstPoints = plugin.getConfig().getInt("points." + entry.rarity(), 1);
-                results.put(entry, db.submit(entry.material(), uuid, name, qty, firstPoints, profileJson));
+                boolean featured = plugin.featured().isFeatured(entry.material());
+                results.put(entry, db.submit(entry.material(), uuid, name, qty, firstPoints,
+                        profileJson, method, featured));
             }
             plugin.getServer().getScheduler().runTask(plugin, () -> finish(player, uuid, name, byBlock, results));
         });
@@ -217,6 +267,7 @@ public final class DonationBox implements Listener {
     private void giveBack(Player player, List<ItemStack> items) {
         if (!player.isOnline()) {
             owed.computeIfAbsent(player.getUniqueId(), k -> new ArrayList<>()).addAll(items);
+            saveOwed();
             plugin.getLogger().warning("Holding " + items.size() + " stack(s) for " + player.getName()
                     + " until they rejoin (donation chest).");
             return;
@@ -229,6 +280,7 @@ public final class DonationBox implements Listener {
     public void onJoin(PlayerJoinEvent e) {
         List<ItemStack> items = owed.remove(e.getPlayer().getUniqueId());
         if (items == null || items.isEmpty()) return;
+        saveOwed();
         giveBack(e.getPlayer(), items);
         plugin.tell(e.getPlayer(), "§7Items from your last donation that couldn't be recorded have been returned.");
     }

@@ -44,15 +44,19 @@ public class FinishCommand implements CommandExecutor {
             return true;
         }
 
-        int bonus = plugin.getConfig().getInt("points.leader-bonus", 5);
+        int bonus = plugin.getConfig().getInt("points.leader-bonus", 0);
         boolean confirming = args.length > 0 && args[0].equalsIgnoreCase("confirm");
 
         if (!confirming) {
             armed.put(sender.getName(), System.currentTimeMillis());
             plugin.tell(sender, "§e§lThis ends the season and cannot be undone.");
             plugin.tell(sender, "§7The vault becomes §fread-only §7(no more submissions, and it can't be reopened),");
-            plugin.tell(sender, "§7and every block's current leader is paid §f" + bonus
-                    + " §7bonus points per block they lead.");
+            if (bonus > 0) {
+                plugin.tell(sender, "§7and every block's current leader is paid §f" + bonus
+                        + " §7bonus points per block they lead.");
+            } else {
+                plugin.tell(sender, "§7No end-of-season leader bonus is paid (points.leader-bonus is 0).");
+            }
             plugin.tell(sender, "§7Run §f/bvfinish confirm §7within 30 seconds to go ahead.");
             return true;
         }
@@ -77,8 +81,10 @@ public class FinishCommand implements CommandExecutor {
                     return;
                 }
                 plugin.tell(sender, "§aThe vault is finished and now read-only.");
-                plugin.tell(sender, "§aPaid §f" + r.pointsAwarded() + " §abonus points to §f"
-                        + r.leaders() + " §aplayers across §f" + r.blocksLed() + " §ablocks led.");
+                if (bonus > 0) {
+                    plugin.tell(sender, "§aPaid §f" + r.pointsAwarded() + " §abonus points to §f"
+                            + r.leaders() + " §aplayers across §f" + r.blocksLed() + " §ablocks led.");
+                }
                 plugin.webhook().seasonFinished(r.leaders(), r.blocksLed(), r.pointsAwarded());
                 // Redraw so locked/held hints and panels reflect the closed state.
                 if (plugin.displays() != null) plugin.displays().refresh();
