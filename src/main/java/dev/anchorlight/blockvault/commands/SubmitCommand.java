@@ -26,8 +26,8 @@ import org.bukkit.inventory.meta.BlockStateMeta;
  * Later donations earn no points but add to the donor's tally for that block;
  * whoever has donated the most wears the niche head.
  *
- * <p>Order is always: write -> confirm commit -> consume. If the database is
- * unreachable the items stay with the player.
+ * <p>Order is always: take the items -> write -> hand them back if the write
+ * failed. Nothing is ever credited without being taken first.
  */
 public class SubmitCommand implements CommandExecutor {
     private final BlockVault plugin;
@@ -131,7 +131,7 @@ public class SubmitCommand implements CommandExecutor {
                     + "§8(/bvsubmit opens the donation chest for extra copies)");
             return;
         }
-        box.donate(player, taken);
+        box.donate(player, taken, "new");
     }
 
     private void submitHand(Player player, String amountArg) {
@@ -180,7 +180,12 @@ public class SubmitCommand implements CommandExecutor {
             }
         }
         final int quantity = amount;
-        final ItemStack template = held.clone();
+        // Take the items BEFORE the write, so they can't be dropped or moved away
+        // while it runs and still be credited. Handed back if the write fails.
+        final ItemStack taken = held.clone();
+        taken.setAmount(quantity);
+        held.setAmount(held.getAmount() - quantity);
+        player.getInventory().setItemInMainHand(held.getAmount() > 0 ? held : null);
 
         int firstPoints = plugin.getConfig().getInt("points." + entry.rarity(), 1);
         String profileJson = HeadUtil.toJson(player.getPlayerProfile());
@@ -188,18 +193,18 @@ public class SubmitCommand implements CommandExecutor {
 
         plugin.tell(player, "§7Donating " + quantity + "× " + pretty + "…");
 
+        boolean featured = plugin.featured().doublesUnlock(material);
         plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
             Database.SubmitResult r = db.submit(material, player.getUniqueId(), player.getName(),
-                    quantity, firstPoints, profileJson);
+                    quantity, firstPoints, profileJson, "hand", featured);
 
             plugin.getServer().getScheduler().runTask(plugin, () -> {
                 if (r.outcome() != Database.SubmitOutcome.OK) {
+                    box.returnItems(player, java.util.List.of(taken));
                     plugin.tell(player,
-                            "§cCould not record that right now - your items are still in your hand. Please retry.");
+                            "§cCould not record that right now - your items have been returned. Please retry.");
                     return;
                 }
-                // Write committed. Only now is it safe to consume the items.
-                consume(player, template, quantity);
 
                 if (r.first()) {
                     plugin.tell(player, "§aYou unlocked " + pretty + "! §7(+" + r.points()
@@ -235,35 +240,6 @@ public class SubmitCommand implements CommandExecutor {
         vaultUtil.applyNiche(entry, top);
         var world = plugin.originWorld();
         if (world != null) vaultUtil.applyLabel(world, entry, true, top);
-    }
-
-    /**
-     * Remove {@code quantity} items like {@code template}, main hand first, then
-     * anywhere in the inventory (the write has committed, so they must go even
-     * if the player shuffled them between the command and this tick).
-     */
-    private void consume(Player player, ItemStack template, int quantity) {
-        int left = quantity;
-        ItemStack hand = player.getInventory().getItemInMainHand();
-        if (hand.isSimilar(template)) {
-            int take = Math.min(left, hand.getAmount());
-            hand.setAmount(hand.getAmount() - take);
-            player.getInventory().setItemInMainHand(hand.getAmount() > 0 ? hand : null);
-            left -= take;
-        }
-        ItemStack[] contents = player.getInventory().getStorageContents();
-        for (int i = 0; i < contents.length && left > 0; i++) {
-            ItemStack it = contents[i];
-            if (it == null || !it.isSimilar(template)) continue;
-            int take = Math.min(left, it.getAmount());
-            it.setAmount(it.getAmount() - take);
-            player.getInventory().setItem(i, it.getAmount() > 0 ? it : null);
-            left -= take;
-        }
-        if (left > 0) {
-            plugin.getLogger().warning(player.getName() + " was " + left + "× " + template.getType()
-                    + " short when the donation was consumed; recorded but not removed.");
-        }
     }
 
     static void celebrate(Player player, String rarity) {

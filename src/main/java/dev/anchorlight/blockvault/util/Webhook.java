@@ -32,15 +32,28 @@ public final class Webhook {
                 + escape(material) + "` (+" + points + " points)");
     }
 
+    /** A featured block was picked automatically (no payout ran to announce it). */
+    public void featuredBlock(String names) {
+        send("⭐ **This week's featured block: " + escape(names) + "** - double unlock points, "
+                + "and its top contributor earns extra at the weekly payout.");
+    }
+
+    public void chapterCompleted(int chapter, String title) {
+        send("✅ **Chapter " + chapter + " — " + escape(title) + "** is complete! Every block on that floor has been given.");
+    }
+
     public void chapterOpened(int chapter, String title) {
         send("🔓 **Chapter " + chapter + " — " + escape(title) + "** is now open!");
     }
 
     /** The season has been finished (read-only) and leader bonuses paid. */
     public void seasonFinished(int leaders, int blocksLed, long points) {
-        send("🏁 **The vault is finished.** It is now read-only. Paid **" + points
-                + "** bonus points to **" + leaders + "** block leaders across **"
-                + blocksLed + "** blocks. Thanks to everyone who took part!");
+        String paid = points > 0
+                ? " Paid **" + points + "** bonus points to **" + leaders + "** block leaders across **"
+                  + blocksLed + "** blocks."
+                : "";
+        send("🏁 **The vault is finished.** It is now read-only." + paid
+                + " Thanks to everyone who took part!");
     }
 
     /**
@@ -55,6 +68,18 @@ public final class Webhook {
             sb.append('\n').append(medal(i++)).append(' ').append(escape(r.name()))
                     .append(" — ").append(r.points()).append(" pts, ")
                     .append(r.blocks()).append(" blocks");
+        }
+        send(sb.toString());
+    }
+
+    /**
+     * The weekly payout summary. {@code bodyLines} are already plain text (no
+     * Discord markdown); they are escaped and posted under the heading.
+     */
+    public void weeklyPayout(String heading, java.util.List<String> bodyLines) {
+        StringBuilder sb = new StringBuilder("📅 **" + escape(heading) + "**");
+        if (bodyLines != null) {
+            for (String line : bodyLines) sb.append('\n').append(escape(line));
         }
         send(sb.toString());
     }

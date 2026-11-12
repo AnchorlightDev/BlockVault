@@ -119,6 +119,77 @@ CREATE TABLE IF NOT EXISTS bv_audit (
   KEY idx_action (action)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- ---------------------------------------------------------------- weekly payouts
+-- One row per completed weekly top-contributor payout. The primary key is the
+-- idempotency guard: a payout for a (edition, week_key) is attempted with an
+-- INSERT, and a duplicate-key means that week was already paid, so a restart or
+-- a double trigger can never pay twice. week_key is the ISO week in the
+-- configured timezone, e.g. '2026-W46'.
+CREATE TABLE IF NOT EXISTS bv_payout_run (
+  edition       VARCHAR(16)     NOT NULL,
+  week_key      VARCHAR(10)     NOT NULL,
+  run_at        DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  total_points  INT UNSIGNED    NOT NULL DEFAULT 0,
+  players       SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+  PRIMARY KEY (edition, week_key)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Audit line per paid block: who earned the weekly bonus on which block, for how
+-- much, whether it was the featured block, and their lead over second place at
+-- the moment the snapshot was taken.
+CREATE TABLE IF NOT EXISTS bv_weekly_payout (
+  id            BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  edition       VARCHAR(16)     NOT NULL,
+  week_key      VARCHAR(10)     NOT NULL,
+  uuid          BINARY(16)      NOT NULL,
+  material      VARCHAR(64)     NOT NULL,
+  points        SMALLINT UNSIGNED NOT NULL,
+  featured      TINYINT(1)      NOT NULL DEFAULT 0,
+  lead_margin   INT             NOT NULL DEFAULT 0,
+  paid_at       DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_week (edition, week_key),
+  KEY idx_uuid (uuid)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ---------------------------------------------------------------- featured block
+-- The featured block(s). A "set" is all rows sharing one set_at; the CURRENT
+-- featured block(s) are the set with the greatest set_at, so a rotation (or a
+-- staff override) takes effect the instant it is written. set_at is millisecond
+-- precision and written explicitly so every row of one set shares it exactly.
+-- week_key records which payout chose the set (audit only). set_by is null for
+-- an automatic pick, else the staff member who overrode it.
+CREATE TABLE IF NOT EXISTS bv_featured (
+  edition       VARCHAR(16)     NOT NULL,
+  week_key      VARCHAR(10)     NOT NULL,
+  material      VARCHAR(64)     NOT NULL,
+  set_at        DATETIME(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  set_by        BINARY(16)      NULL,
+  PRIMARY KEY (edition, week_key, material),
+  KEY idx_setat (edition, set_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ---------------------------------------------------------------- contribution log
+-- Append-only monitoring log of every contribution: who, what, how much, how it
+-- was submitted, and whether it was the unlocking donation. Distinct from the
+-- bv_donation tally (which is summed) and bv_audit (state changes). Staff review
+-- this to spot item-passing or collusion; nothing is blocked automatically.
+CREATE TABLE IF NOT EXISTS bv_contribution_log (
+  id            BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  edition       VARCHAR(16)     NOT NULL,
+  uuid          BINARY(16)      NOT NULL,
+  material      VARCHAR(64)     NOT NULL,
+  amount        INT             NOT NULL,
+  -- chest/hand/new = player donations; adjust/remove = staff edits via /bvmonitor
+  method        ENUM('chest','hand','new','adjust','remove') NOT NULL,
+  first_unlock  TINYINT(1)      NOT NULL DEFAULT 0,
+  ts            DATETIME(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (id),
+  KEY idx_uuid (uuid),
+  KEY idx_mat (edition, material),
+  KEY idx_ts (ts)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 -- ---------------------------------------------------------------- views
 CREATE OR REPLACE VIEW bv_progress AS
 SELECT t.edition,
@@ -131,9 +202,12 @@ LEFT JOIN bv_submission s
        ON s.material = t.material AND s.edition = t.edition
 GROUP BY t.edition, t.chapter;
 
+-- Only players with points: a contributor row can exist with 0 (repeat-only
+-- donor, revoked unlock), and they shouldn't fill leaderboard places.
 CREATE OR REPLACE VIEW bv_leaderboard AS
 SELECT c.uuid, c.last_name, c.points, COUNT(s.material) AS blocks
 FROM bv_contributor c
 LEFT JOIN bv_submission s ON s.uuid = c.uuid
+WHERE c.points > 0
 GROUP BY c.uuid, c.last_name, c.points
 ORDER BY c.points DESC, blocks DESC;

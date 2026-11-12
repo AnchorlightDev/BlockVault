@@ -18,7 +18,9 @@
 # v5: info-board added.
 # v6: points.leader-bonus added.
 # v7: discord.daily-leaderboard added.
-config-version: 7
+# v8: weekly-bonus, featured-block, monitoring added; display.label-view-range /
+#     label-brightness / label-background added.
+config-version: 8
 
 edition: '26.2'
 
@@ -55,11 +57,20 @@ update:
 # the block as a small item, with its name underneath.
 display:
   # Size of the item (1.0 = a full block).
-  item-scale: 0.4
+  item-scale: 0.6
   # Show the block's name under the item.
   label: true
   # Text size of the name (long names wrap onto a second line).
-  label-scale: 0.35
+  label-scale: 0.45
+  # How far a niche label still renders, as a multiplier (1.0 is the vanilla
+  # text-display range, roughly 64 blocks). Lower keeps distant labels from
+  # stacking into a wall of text as you look across a floor. 0.4 ~= 25 blocks.
+  label-view-range: 0.4
+  # Light override for labels, 0-15. 15 = full bright, so names read in the dark.
+  label-brightness: 15
+  # Translucent panel behind the label text, as ARGB (alpha,red,green,blue).
+  # Higher alpha = more opaque. "0,0,0,0" turns the panel off.
+  label-background: "140,0,0,0"
 
 # Points awarded for UNLOCKING a block (its first donation), per rarity.
 # Repeat donations earn no points; they decide who wears the niche head.
@@ -71,7 +82,46 @@ points:
   # Flat bonus paid ONCE when the season ends (/bvfinish), to each block's
   # leader - the player who has given the most of that block. A player leading
   # several blocks is paid this for each. 0 disables the end-of-season bonus.
-  leader-bonus: 5
+  # Off by default: the weekly bonus below rewards top contributors instead.
+  leader-bonus: 0
+
+# Weekly top-contributor bonus. Every week the current top contributor of each
+# unlocked block earns points, so the competition keeps going between floor
+# drops. Paid in one transaction and logged to bv_weekly_payout / bv_payout_run;
+# a given week is never paid twice, even across a restart.
+weekly-bonus:
+  enabled: true
+  # Day and hour (in the 'timezone' below) the payout runs. Daylight saving is
+  # handled. Default: Friday 9am.
+  day: FRIDAY
+  hour: 9
+  # Points the top contributor of each block earns.
+  points-per-block: 2
+  # Most blocks one player is paid for per payout. If a player is top on more,
+  # the paid ones are those where their lead over second place is biggest.
+  # Featured blocks (below) do NOT count towards this cap.
+  cap-blocks: 10
+  # Points for being top contributor of the featured block (instead of 2).
+  featured-points-per-block: 4
+  # Also send each paid player a direct message with their count and whether
+  # they hit the cap.
+  announce-personal: true
+
+# The weekly featured block, rotated at each payout and announced with it.
+# Chosen from unlocked floors, favouring blocks with few or no contributions.
+featured-block:
+  enabled: true
+  # How many blocks to feature each week.
+  count: 1
+  # Double the first-contributor (unlock) points on a featured block while it is
+  # featured, if nobody has claimed it yet.
+  double-first-contributor: true
+
+# Collusion / item-passing monitoring. Logs every contribution (player, block,
+# amount, how it was submitted) to bv_contribution_log for staff to review with
+# /bvmonitor. Monitoring only - nothing is ever blocked automatically.
+monitoring:
+  enabled: true
 
 # Timezone the chapter opens-at times below are written in (an IANA zone id).
 # Daylight saving is handled. Blank = the server machine's own timezone.
@@ -101,26 +151,26 @@ early-open-percent: 0
 # /bvsetup hologram info (e.g. the pillar at the entrance). Floors that haven't
 # opened get their own sign automatically - /bvsetup hologram <2-6>.
 # & colour codes. Placeholders: {done} {total} {percent} {floor}
-# {common} {uncommon} {rare} (points per rarity, from 'points' above).
+# {common} {uncommon} {rare} (points per rarity, from 'points' above),
+# {bonus} (points.leader-bonus), {featured} (this week's featured block, or "-"),
+# {weekly} (weekly-bonus.points-per-block), {cap} (weekly-bonus.cap-blocks).
 info-board:
   enabled: true
   # Text size (1.0 = normal).
-  scale: 1.0
+  scale: 0.6
   lines:
     - "&6&lThe Block Vault"
-    - "&7One of every block in Minecraft - collected together."
+    - "&7One of every block in Minecraft, collected together."
     - ""
-    - "&e&lHow it works"
-    - "&f/bvsubmit &7opens the donation chest - drop in everything at once"
-    - "&f/bvsubmit new &7gives one of every block you have that's still needed"
-    - "&7First to give a block &funlocks it &7and earns points"
+    - "&f1. &7First to give a block &funlocks it &7and earns points"
     - "&aCommon {common} &8· &9Uncommon {uncommon} &8· &dRare {rare}"
-    - "&7Give the most of a block to wear its &fniche head"
-    - "&7New floors open on set dates through the season"
+    - "&f2. &7Give the most &7-> your head on its niche + a weekly bonus"
+    - "&f3. &7Only open floors take blocks"
     - ""
-    - "&f/bvcheck &7what you're carrying that the vault needs"
-    - "&f/bvmissing &8· &f/bvfind &8· &f/bvme"
+    - "&e&lThis week &8· &fFeatured block: &b{featured} &7(double points)"
+    - "&7Top contributors earn &f{weekly} pts &7a block every Friday &8(up to {cap} blocks)"
     - ""
+    - "&f/bvsubmit &8· &f/bvblocks &8· &f/bvfind &8· &f/bvme"
     - "&6{done} &7/ &6{total} &7blocks collected &8({percent}%)"
 
 # Optional Discord webhook for rare submissions and chapter unlocks.

@@ -61,8 +61,38 @@ public class VaultUtil {
     private static final double ITEM_OUT = 0.15;
     /** Label baseline: near the bottom of the block below the head. */
     private static final double LABEL_Y = -0.95;
-    /** Label sits just proud of the wall face so it doesn't z-fight. */
-    private static final double LABEL_OUT = 0.02;
+    /** Label sits proud of the wall face so it doesn't z-fight or clip into the block. */
+    private static final double LABEL_OUT = 0.06;
+    /** Fallback panel behind the name label if display.label-background is unreadable. */
+    private static final Color LABEL_BG_DEFAULT = Color.fromARGB(140, 0, 0, 0);
+
+    /** Set a display's uniform scale, preserving its translation and rotation. */
+    private static void setScale(Display d, float scale) {
+        Transformation t = d.getTransformation();
+        d.setTransformation(new Transformation(t.getTranslation(), t.getLeftRotation(),
+                new Vector3f(scale, scale, scale), t.getRightRotation()));
+    }
+
+    /** The configured label background (ARGB "a,r,g,b"), or the default if malformed. */
+    private Color labelBackground() {
+        String raw = plugin.getConfig().getString("display.label-background", "140,0,0,0");
+        try {
+            String[] p = raw.split(",");
+            return Color.fromARGB(
+                    Integer.parseInt(p[0].trim()), Integer.parseInt(p[1].trim()),
+                    Integer.parseInt(p[2].trim()), Integer.parseInt(p[3].trim()));
+        } catch (Exception e) {
+            return LABEL_BG_DEFAULT;
+        }
+    }
+
+    private int labelBrightness() {
+        return Math.max(0, Math.min(15, plugin.getConfig().getInt("display.label-brightness", 15)));
+    }
+
+    private float labelViewRange() {
+        return (float) Math.max(0.01, plugin.getConfig().getDouble("display.label-view-range", 0.4));
+    }
 
     public boolean hasStarted() {
         return plugin.isVaultStarted();
@@ -163,9 +193,17 @@ public class VaultUtil {
             return true;
         }
         if (existing != null) {
-            if (existing.getItemStack() != null && existing.getItemStack().getType() == type) return false;
-            existing.setItemStack(new ItemStack(type));
-            return true;
+            boolean changed = false;
+            float scale = (float) plugin.getConfig().getDouble("display.item-scale", 0.6);
+            if (existing.getTransformation().getScale().x() != scale) {
+                setScale(existing, scale);
+                changed = true;
+            }
+            if (existing.getItemStack() == null || existing.getItemStack().getType() != type) {
+                existing.setItemStack(new ItemStack(type));
+                changed = true;
+            }
+            return changed;
         }
         spawnItem(at, entry.material(), new ItemStack(type), nicheKey);
         return true;
@@ -189,18 +227,53 @@ public class VaultUtil {
         }
         String text = labelText(entry.material()) + "\n" + statusText(top);
         if (existing != null) {
-            if (text.equals(existing.getText())) return false;
-            existing.setText(text);
-            return true;
+            boolean changed = enforceLabelStyle(existing);
+            if (!text.equals(existing.getText())) {
+                existing.setText(text);
+                changed = true;
+            }
+            return changed;
         }
         spawnLabel(at, entry.material(), text, labelKey);
         return true;
     }
 
-    /** Second part of a niche label: who holds it and what to beat, or an invitation. */
+    /** Bring an existing label up to the configured scale, contrast panel, brightness and view range. */
+    private boolean enforceLabelStyle(TextDisplay d) {
+        boolean changed = false;
+        float scale = (float) plugin.getConfig().getDouble("display.label-scale", 0.45);
+        if (d.getTransformation().getScale().x() != scale) {
+            setScale(d, scale);
+            changed = true;
+        }
+        Color bg = labelBackground();
+        if (!bg.equals(d.getBackgroundColor())) {
+            d.setDefaultBackground(false);
+            d.setBackgroundColor(bg);
+            changed = true;
+        }
+        int b = labelBrightness();
+        Display.Brightness want = new Display.Brightness(b, b);
+        if (!want.equals(d.getBrightness())) {
+            d.setBrightness(want);
+            changed = true;
+        }
+        float range = labelViewRange();
+        if (d.getViewRange() != range) {
+            d.setViewRange(range);
+            changed = true;
+        }
+        return changed;
+    }
+
+    /**
+     * Second line of a niche label: the current top contributor, or an invitation.
+     * One short line in a light colour (billboard stays flat on the wall), so the
+     * whole label is exactly two lines: block name, then this.
+     */
     public static String statusText(Database.TopDonor top) {
-        if (top == null) return "§7No one yet —\n§ebe the first!";
-        return "§7Top: §e" + top.name() + "\n§7To beat: §f" + top.quantity();
+        if (top == null) return "§eBe the first!";
+        return "§eTop: §f" + top.name();
     }
 
     /** "cut_sandstone" -> "Cut Sandstone", white. */
@@ -249,7 +322,10 @@ public class VaultUtil {
 
     /** Spawn a tagged name label flat against the wall. Also used by the /bvsetup preview. */
     public TextDisplay spawnLabel(Location at, String tag, String text, NamespacedKey key) {
-        float scale = (float) plugin.getConfig().getDouble("display.label-scale", 0.35);
+        float scale = (float) plugin.getConfig().getDouble("display.label-scale", 0.45);
+        Color bg = labelBackground();
+        int b = labelBrightness();
+        float range = labelViewRange();
         return at.getWorld().spawn(at, TextDisplay.class, d -> {
             d.getPersistentDataContainer().set(key, PersistentDataType.STRING, tag);
             d.setText(text);
@@ -258,7 +334,9 @@ public class VaultUtil {
             d.setLineWidth(100); // ~one block wide at the default scale; long names wrap
             d.setShadowed(true);
             d.setDefaultBackground(false);
-            d.setBackgroundColor(Color.fromARGB(0, 0, 0, 0));
+            d.setBackgroundColor(bg);
+            d.setBrightness(new Display.Brightness(b, b)); // full-bright so names read in the dark
+            d.setViewRange(range);                         // thin out distant labels
             d.setTransformation(new Transformation(
                     new Vector3f(), new AxisAngle4f(),
                     new Vector3f(scale, scale, scale), new AxisAngle4f()));
@@ -302,7 +380,7 @@ public class VaultUtil {
 
     /** Spawn a tagged floating item. Also used by the /bvsetup preview. */
     public ItemDisplay spawnItem(Location at, String tag, ItemStack item, NamespacedKey key) {
-        float scale = (float) plugin.getConfig().getDouble("display.item-scale", 0.4);
+        float scale = (float) plugin.getConfig().getDouble("display.item-scale", 0.6);
         return at.getWorld().spawn(at, ItemDisplay.class, d -> {
             d.getPersistentDataContainer().set(key, PersistentDataType.STRING, tag);
             d.setItemStack(item);

@@ -66,15 +66,30 @@ public final class DisplayService {
 
     public void start() {
         this.task = plugin.getServer().getScheduler().runTaskTimer(
-                plugin, this::refresh, 20L * 15L, 20L * 60L);
+                plugin, this::refreshNow, 20L * 15L, 20L * 60L);
     }
 
     public void stop() {
         if (task != null) task.cancel();
     }
 
-    /** Rebuild the leader panel and hologram from the current standings. */
+    /** Set while a refresh is queued, so a burst of donations runs one pass, not dozens. */
+    private final java.util.concurrent.atomic.AtomicBoolean refreshQueued =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
+
+    /**
+     * Rebuild the leader panel and holograms from the current standings. Calls in
+     * the same second are coalesced into one pass (each pass is ~10 queries).
+     */
     public void refresh() {
+        if (!refreshQueued.compareAndSet(false, true)) return;
+        plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
+            refreshQueued.set(false);
+            refreshNow();
+        }, 20L);
+    }
+
+    private void refreshNow() {
         if (plugin.originWorld() == null) return;
         plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
             List<Database.LeaderRow> top = plugin.database().topContributors(5);
@@ -287,9 +302,22 @@ public final class DisplayService {
                 .replace("{floor}", String.valueOf(plugin.chapters().current()))
                 .replace("{common}", String.valueOf(cfg.getInt("points.common", 1)))
                 .replace("{uncommon}", String.valueOf(cfg.getInt("points.uncommon", 5)))
-                .replace("{rare}", String.valueOf(cfg.getInt("points.rare", 10)));
+                .replace("{rare}", String.valueOf(cfg.getInt("points.rare", 10)))
+                .replace("{bonus}", String.valueOf(cfg.getInt("points.leader-bonus", 0)))
+                .replace("{featured}", featuredName())
+                .replace("{weekly}", String.valueOf(cfg.getInt("weekly-bonus.points-per-block", 2)))
+                .replace("{cap}", String.valueOf(cfg.getInt("weekly-bonus.cap-blocks", 10)));
         text = org.bukkit.ChatColor.translateAlternateColorCodes('&', text);
         upsertBoard(block, "info", text, (float) cfg.getDouble("info-board.scale", 1.0));
+    }
+
+    /** This week's featured block as a display name, or "-" if none. */
+    private String featuredName() {
+        if (plugin.featured() == null) return "-";
+        String material = plugin.featured().displayMaterial();
+        if (material == null) return "-";
+        Material m = Material.matchMaterial(material);
+        return m != null ? dev.anchorlight.blockvault.util.VaultUtil.formatMaterialName(m) : material;
     }
 
     /** Find-or-spawn the tagged board above {@code block} and set its text. */

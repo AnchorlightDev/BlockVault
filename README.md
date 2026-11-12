@@ -107,13 +107,32 @@ heads, no item, not counted in the season total.
   top contributors are posted to the webhook once a day at a configured hour
   (`discord.daily-leaderboard`, in the plugin `timezone`). Skipped while the vault
   is closed or finished.
+- **Weekly top-contributor bonus (`weekly-bonus`).** Every week (default Friday 9am
+  in the plugin `timezone`, daylight saving handled) the current top contributor of
+  each unlocked block earns points (2 each), capped at 10 blocks per player per week
+  (20 points); over the cap, the paid 10 are those with the biggest lead over second
+  place. On a tie for a block, the top contributor is whoever reached that amount
+  first. The payout is one transaction, logged to `bv_weekly_payout`, and keyed by
+  ISO week in `bv_payout_run` so it is never paid twice - a restart over the payout
+  time catches up without double-paying. A summary is broadcast and posted to
+  Discord. Trigger or inspect with `/bvweekly`.
+- **Weekly featured block (`featured-block`).** One block (configurable count) is
+  featured each week, rotated at the Friday payout, chosen from unlocked floors and
+  favouring blocks with few or no contributions. While featured its unlock points
+  double (if unclaimed) and its weekly bonus is 4 instead of 2, and it is outside
+  the 10-block cap. Staff override with `/bvfeatured`; it shows on the info board via
+  `{featured}`.
+- **Contribution monitoring (`monitoring`).** Every contribution is logged to
+  `bv_contribution_log` (player, block, amount, submission method, time). Staff
+  review and correct with `/bvmonitor`. Monitoring only - nothing is auto-blocked.
 - **The target list is frozen per `edition`.** New blocks go in as a new edition,
   never the running one.
 - **Ending the season (`/bvfinish`).** When every floor's run is done, `/bvfinish`
   (confirm with `/bvfinish confirm` within 30s) ends the season: the vault becomes
   **read-only** (no more submissions, and `/bvstart` can't reopen it) and each
-  block's current leader - whoever has given the most of that block - is paid a
-  flat bonus (`points.leader-bonus`, default 5) once, for every block they lead.
+  block's current leader - whoever has given the most of that block - can be paid a
+  flat bonus (`points.leader-bonus`) once, for every block they lead. It defaults to
+  0 (off) because the weekly bonus rewards top contributors during the season.
   This is terminal and cannot be undone. `/bvstart stop` by contrast is only a
   reversible pause.
 
@@ -150,6 +169,7 @@ query commands hide them unless the sender has `blockvault.spoilers`.
 | `/bvinfo <block>` | `blockvault.info` | Rarity, points, chapter, status |
 | `/bvmissing [chapter] [page]` | `blockvault.missing` | Outstanding list, paginated |
 | `/bvcheck` | `blockvault.check` | What in your inventory the vault needs |
+| `/bvblocks [needed\|unlocked\|top\|carrying] [floor]` | `blockvault.blocks` | Menu of every block: needed or unlocked, top contributor, how many more you'd need to take it |
 | `/bvme` | `blockvault.me` | Blocks unlocked, items given, points, rank |
 | `/bvhistory <block>` | `blockvault.history` | Who unlocked it, and the top 5 donors |
 | `/bvedition` | `blockvault.edition` | Frozen target-list version |
@@ -161,6 +181,9 @@ query commands hide them unless the sender has `blockvault.spoilers`.
 | `/bvrepair` | `blockvault.repair` | Rebuild missing niche heads and item displays |
 | `/bvsetup …` | `blockvault.setup` | Build the layout by scanning each floor (before `/bvstart`) |
 | `/bvbackup` | `blockvault.backup` | Timestamped `mysqldump` |
+| `/bvweekly [run confirm\|status]` | `blockvault.weekly` | Show the payout status, or pay this week now (counts as this week's payout) |
+| `/bvfeatured [set <block>\|clear]` | `blockvault.featured` | Show or override this week's featured block |
+| `/bvmonitor <history\|recent\|adjust\|remove>` | `blockvault.monitor` | Review contribution history; adjust or remove contributions |
 
 `blockvault.build` bypasses in-region build/interaction protection.
 `blockvault.spoilers` lets query commands show blocks on locked floors.
